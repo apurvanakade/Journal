@@ -5,6 +5,7 @@ A minimalist journal: one Markdown entry per day. `/` opens today's entry; the c
 - **Editor** styles Markdown in place (`**bold**`, `*italic*`, `# headings`, `` `code` ``, `[links](…)`, `[[YYYY-MM-DD]]`); like Obsidian's live preview, the `**`/`_`/`[](url)` markers are hidden until the cursor touches them. ⌘/Ctrl-click opens a link.
 - **Conflicts**: saves carry the version they were based on; if another device saved first you choose "load theirs" or "keep mine". Returning to a tab pulls in remote edits.
 - **History**: the previous text is snapshotted roughly once per writing session (10-minute gap), on big deletions, on clearing, and on conflicts. Restore from `/<day>/history`.
+- **Theme**: follows the system light/dark setting; the ◐ button next to search overrides it (remembered per browser).
 - **Search** (`/search?q=`, all words must match), **Export** (`/export.zip`, one `YYYY-MM-DD.md` per day — the importer reads it back).
 - **Keys** (outside the editor; Esc leaves it): ←/→ previous/next day, `t` today, `/` search. ⌘D (Mac) / Ctrl+D (Linux, Windows) goes to today from anywhere, including the editor.
 
