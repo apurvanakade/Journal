@@ -1,10 +1,13 @@
 import os
 import sqlite3
+import urllib.parse
+import urllib.request
 from datetime import date, datetime, timezone
 
 from flask import Flask, abort, g, redirect, render_template, request, url_for
 
 DB_PATH = os.environ.get("JOURNAL_DB", "dev.db")
+GTD_URL = os.environ.get("GTD_URL", "http://127.0.0.1:5005")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries (
@@ -79,4 +82,17 @@ def save(day):
     else:
         db.execute("DELETE FROM entries WHERE day = ?", (d,))
     db.commit()
+    return "", 204
+
+
+@app.post("/api/inbox")
+def inbox():
+    title = request.get_data(as_text=True).strip()
+    if not title:
+        abort(400)
+    data = urllib.parse.urlencode({"title": title}).encode()
+    try:
+        urllib.request.urlopen(GTD_URL + "/capture", data, timeout=5)
+    except OSError:
+        abort(502)
     return "", 204
