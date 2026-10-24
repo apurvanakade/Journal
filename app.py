@@ -91,13 +91,16 @@ def contained(a, b):
 
 
 def needs_snapshot(db, day, old):
-    """Called when `old` ends a session. First drop snapshots that `old` merely extended (nothing in
-    them was lost), then snapshot `old` unless it's within a few words of the newest one left."""
+    """Called when `old` ends a session. First drop snapshots that `old` merely extended or that are
+    too short to matter, then snapshot `old` unless it's that short or within a few words of the
+    newest one left."""
     while (last := db.execute(
         "SELECT id, body FROM revisions WHERE day = ? ORDER BY saved_at DESC LIMIT 1", (day,)
-    ).fetchone()) and contained(last[1], old):
+    ).fetchone()) and (contained(last[1], old) or len(last[1].split()) < MIN_CHANGED_WORDS):
         db.execute("DELETE FROM revisions WHERE id = ?", (last[0],))
-    return not last or changed_words(last[1], old) >= MIN_CHANGED_WORDS
+    return len(old.split()) >= MIN_CHANGED_WORDS and (
+        not last or changed_words(last[1], old) >= MIN_CHANGED_WORDS
+    )
 
 
 def write(db, day, body):
