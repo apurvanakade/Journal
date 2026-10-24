@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<style>
+  .ink { fill: #2b2a28; stroke: #2b2a28; }
+  @media (prefers-color-scheme: dark) { .ink { fill: #e4e1da; stroke: #e4e1da; } }
+</style>
+<defs>
+  <g id="pen" transform="translate(20 19) rotate(40)">
+    <path d="M0 0 L-2.2 -4.5 H2.2 Z"/>
+    <rect x="-2.2" y="-15.5" width="4.4" height="10" rx="1"/>
+  </g>
+  <mask id="cut">
+    <rect width="32" height="32" fill="#fff"/>
+    <use href="#pen" fill="#000" stroke="#000" stroke-width="3"/>
+  </mask>
+</defs>
+<g class="ink" fill="none" stroke-width="2" stroke-linejoin="round" mask="url(#cut)" style="fill:none">
+  <path d="M16 13 C12 11 7 11 3 12 V27 C7 26 12 26 16 28 Z M16 13 C20 11 25 11 29 12 V27 C25 26 20 26 16 28 Z"/>
+</g>
+<use href="#pen" class="ink" stroke="none" style="stroke:none"/>
+</svg>
