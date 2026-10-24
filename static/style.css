@@ -103,6 +103,8 @@ dialog input {
   font: 17px/1.7 Georgia, "Iowan Old Style", serif; caret-color: var(--fg);
 }
 .ed.empty::before { content: attr(data-placeholder); color: var(--muted); position: absolute; pointer-events: none; }
+.ed .p, .ed .li { display: inline-block; width: 100%; }
+.ed .p { margin-bottom: 0.6em; }
 .ed .md { color: var(--faint); }
 .ed .fmt:not(.md-on) > .hide { display: none; }
 .ed .h { font-weight: 700; }

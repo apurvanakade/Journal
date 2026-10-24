@@ -39,17 +39,28 @@ function inline(s) {
   return out + esc(s.slice(i));
 }
 
+const ITEM = /^(\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?)(.*)/;
+
+function lineHtml(line) {
+  let m;
+  if ((m = line.match(/^(#{1,6} )(.*)/))) return `<span class="fmt h h${m[1].length - 1}">${mk(m[1], 1)}${inline(m[2])}</span>`;
+  if (/^ {0,3}([-*_])( ?\1){2,}\s*$/.test(line)) return mk(line);
+  if ((m = line.match(ITEM))) return mk(m[1]) + inline(m[2]);
+  if ((m = line.match(/^(>+ ?)(.*)/))) return `<span class="quote">${mk(m[1])}${inline(m[2])}</span>`;
+  return inline(line);
+}
+
+// Each non-empty line outside code is a paragraph (.p) with a gap below it, parskip-style;
+// list items stay tight (.li) except the last of a run. The "\n"s stay outside the wrappers.
 function markdown(text) {
   let fence = false;
-  return text.split("\n").map(line => {
-    let m;
+  const lines = text.split("\n");
+  return lines.map((line, i) => {
     if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return `<span class="md code-line">${esc(line)}</span>`; }
     if (fence) return `<span class="code-line">${esc(line)}</span>`;
-    if ((m = line.match(/^(#{1,6} )(.*)/))) return `<span class="fmt h h${m[1].length - 1}">${mk(m[1], 1)}${inline(m[2])}</span>`;
-    if (/^ {0,3}([-*_])( ?\1){2,}\s*$/.test(line)) return mk(line);
-    if ((m = line.match(/^(\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?)(.*)/))) return mk(m[1]) + inline(m[2]);
-    if ((m = line.match(/^(>+ ?)(.*)/))) return `<span class="quote">${mk(m[1])}${inline(m[2])}</span>`;
-    return inline(line);
+    if (!line) return "";
+    const tight = ITEM.test(line) && i + 1 < lines.length && ITEM.test(lines[i + 1]);
+    return `<span class="${tight ? "li" : "p"}">${lineHtml(line)}</span>`;
   }).join("\n");
 }
 
