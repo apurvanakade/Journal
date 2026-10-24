@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ q or "Search" }}{% endblock %}
+{% block main %}
+  <header><h1>{% if q %}{{ results | length }} result{{ "" if results | length == 1 else "s" }} for “{{ q }}”{% else %}Search{% endif %}</h1></header>
+  <ul class="list">
+    {% for d, snip in results %}
+    <li><a href="/{{ d.isoformat() }}"><span class="when">{{ d.strftime("%a, %b %-d, %Y") }}</span>{{ snip }}</a></li>
+    {% endfor %}
+  </ul>
+{% endblock %}

@@ -1,0 +1,115 @@
+:root {
+  --bg: #fbfaf7; --fg: #2b2a28; --muted: #8a877f; --faint: #c4c0b7; --line: #e6e3dc;
+  --accent: #2b2a28; --accent-fg: #fbfaf7; --dot: #b0aca2; --mark: #f3e3a6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1b1a; --fg: #e4e1da; --muted: #85827b; --faint: #55534f; --line: #2f2e2c;
+    --accent: #e4e1da; --accent-fg: #1b1b1a; --dot: #6d6a64; --mark: #5a4c1c;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg); }
+body {
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  display: flex; gap: 48px; max-width: 1040px; margin: 0 auto; padding: 40px 24px;
+}
+aside { flex: 0 0 240px; }
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+a { color: inherit; }
+button { font: inherit; color: inherit; }
+
+.search input {
+  width: 100%; margin-bottom: 20px; padding: 6px 10px; font: inherit; font-size: 14px;
+  color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; outline: 0;
+}
+.search input:focus { border-color: var(--muted); }
+
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-head button {
+  background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer;
+  padding: 4px 8px; border-radius: 4px;
+}
+.cal-head button.title { color: var(--fg); font-size: 16px; font-weight: 600; }
+.cal-head button:hover { color: var(--fg); background: var(--line); }
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.grid.months { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.grid.months a { padding: 10px 0; }
+.grid .dow { font-size: 11px; color: var(--muted); padding-bottom: 4px; }
+.grid a {
+  position: relative; display: block; padding: 5px 0; border-radius: 4px;
+  color: var(--muted); text-decoration: none; font-size: 13px;
+}
+.grid a:hover { background: var(--line); }
+.grid a.has { color: var(--fg); }
+.grid a.has::after {
+  content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px;
+  margin-left: -1.5px; border-radius: 50%; background: var(--dot);
+}
+.grid a.today { box-shadow: inset 0 0 0 1px var(--muted); }
+.grid a.sel { background: var(--accent); color: var(--accent-fg); }
+.grid a.sel::after { background: var(--accent-fg); }
+.side-links { display: flex; gap: 16px; margin-top: 12px; font-size: 13px; }
+.side-links a { color: var(--muted); }
+
+header {
+  display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; justify-content: space-between;
+  margin-bottom: 16px;
+}
+h1 { font-size: 22px; font-weight: 600; margin: 0; }
+h1 a.back { text-decoration: none; }
+.day-nav { display: flex; align-items: baseline; gap: 6px; margin-left: -10px; }
+.day-nav a {
+  color: var(--muted); text-decoration: none; font-size: 20px; padding: 0 6px; border-radius: 4px;
+}
+.day-nav a:hover { color: var(--fg); background: var(--line); }
+.meta { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.meta button {
+  background: none; border: 0; padding: 0; color: var(--fg); text-decoration: underline; cursor: pointer;
+}
+.meta #inbox-btn {
+  color: var(--muted); text-decoration: none; font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 4px;
+}
+.meta #inbox-btn:hover { color: var(--fg); background: var(--line); }
+dialog {
+  border: 1px solid var(--line); border-radius: 8px; padding: 16px; width: min(480px, 90vw);
+  background: var(--bg); color: var(--fg);
+}
+dialog::backdrop { background: rgb(0 0 0 / .2); }
+dialog input {
+  width: 100%; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; font-size: 17px;
+}
+.muted { color: var(--muted); }
+
+/* Editor: plain Markdown source, styled in place. Markers stay visible but faint. */
+.ed {
+  flex: 1; min-height: 60vh; outline: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: 17px/1.7 Georgia, "Iowan Old Style", serif; caret-color: var(--fg);
+}
+.ed.empty::before { content: attr(data-placeholder); color: var(--muted); position: absolute; pointer-events: none; }
+.ed .md { color: var(--faint); }
+.ed .fmt:not(.md-on) > .hide { display: none; }
+.ed .h { font-weight: 700; }
+.ed .h1 { font-size: 1.4em; }
+.ed .h2 { font-size: 1.2em; }
+.ed .quote { color: var(--muted); font-style: italic; }
+.ed code, .ed .code-line { font: 0.88em/1 ui-monospace, Menlo, monospace; }
+.ed code { background: var(--line); border-radius: 3px; }
+.ed a { text-decoration-color: var(--muted); text-underline-offset: 2px; }
+.mod .ed a { cursor: pointer; }
+
+.list { list-style: none; margin: 0; padding: 0; }
+.list li { border-top: 1px solid var(--line); }
+.list li > a, .list summary { display: block; padding: 10px 0; text-decoration: none; cursor: pointer; }
+.list .when { display: block; font-size: 13px; color: var(--muted); }
+.list mark { background: var(--mark); color: inherit; border-radius: 2px; }
+.list pre { white-space: pre-wrap; font: 15px/1.6 Georgia, serif; margin: 0 0 12px; }
+.list form button {
+  margin-bottom: 14px; padding: 4px 12px; background: var(--accent); color: var(--accent-fg);
+  border: 0; border-radius: 4px; cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  body { flex-direction: column; gap: 24px; padding: 20px 16px; }
+  aside { flex: none; max-width: 320px; }
+}

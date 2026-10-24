@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Journal{% endblock %} · Journal</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<aside>
+  <form class="search" action="/search">
+    <input id="q" name="q" type="search" placeholder="Search" value="{{ q or '' }}" autocomplete="off">
+  </form>
+  <div class="cal-head">
+    <button id="prev" aria-label="Previous">‹</button>
+    <button id="month" class="title" title="Pick a month"></button>
+    <button id="next" aria-label="Next">›</button>
+  </div>
+  <div class="grid" id="grid"></div>
+  <nav class="side-links">
+    {% if not day or day.isoformat() != today %}<a href="/">Go to today</a>{% endif %}
+    <a href="/export.zip">Export</a>
+  </nav>
+</aside>
+<main>
+{% block main %}{% endblock %}
+</main>
+<script>
+const DAY = {{ (day.isoformat() if day else today) | tojson }};
+const SEL = {{ (day.isoformat() if day else "") | tojson }};
+const TODAY = {{ today | tojson }};
+const DAYS = new Set({{ days | tojson }});
+</script>
+<script src="{{ url_for('static', filename='calendar.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

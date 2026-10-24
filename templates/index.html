@@ -1,183 +1,28 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{ day.strftime("%b %-d, %Y") }} · Journal</title>
-<style>
-  :root {
-    --bg: #fbfaf7; --fg: #2b2a28; --muted: #8a877f; --line: #e6e3dc;
-    --accent: #2b2a28; --accent-fg: #fbfaf7; --dot: #b0aca2;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1b1b1a; --fg: #e4e1da; --muted: #85827b; --line: #2f2e2c;
-      --accent: #e4e1da; --accent-fg: #1b1b1a; --dot: #6d6a64;
-    }
-  }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); }
-  body {
-    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    display: flex; gap: 48px; max-width: 1040px; margin: 0 auto; padding: 40px 24px;
-  }
-  aside { flex: 0 0 240px; }
-  main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-
-  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .cal-head span { font-weight: 600; }
-  .cal-head button {
-    background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer;
-    padding: 4px 8px; border-radius: 4px;
-  }
-  .cal-head button:hover { color: var(--fg); background: var(--line); }
-  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
-  .grid .dow { font-size: 11px; color: var(--muted); padding-bottom: 4px; }
-  .grid a {
-    position: relative; display: block; padding: 5px 0; border-radius: 4px;
-    color: var(--muted); text-decoration: none; font-size: 13px;
-  }
-  .grid a:hover { background: var(--line); }
-  .grid a.has { color: var(--fg); }
-  .grid a.has::after {
-    content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px;
-    margin-left: -1.5px; border-radius: 50%; background: var(--dot);
-  }
-  .grid a.today { box-shadow: inset 0 0 0 1px var(--muted); }
-  .grid a.sel { background: var(--accent); color: var(--accent-fg); }
-  .grid a.sel::after { background: var(--accent-fg); }
-  .today-link { display: inline-block; margin-top: 12px; font-size: 13px; color: var(--muted); }
-
-  header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
-  h1 { font-size: 22px; font-weight: 600; margin: 0; }
-  #status { font-size: 12px; color: var(--muted); }
-  .head-right { display: flex; align-items: baseline; gap: 12px; }
-  #inbox-btn {
-    background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer;
-    padding: 2px 6px; border-radius: 4px;
-  }
-  #inbox-btn:hover { color: var(--fg); background: var(--line); }
-  dialog {
-    border: 1px solid var(--line); border-radius: 8px; padding: 16px; width: min(480px, 90vw);
-    background: var(--bg); color: var(--fg);
-  }
-  dialog::backdrop { background: rgb(0 0 0 / .2); }
-  dialog input {
-    width: 100%; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; font-size: 17px;
-  }
-  textarea {
-    flex: 1; width: 100%; min-height: 60vh; resize: none; border: 0; outline: 0; padding: 0;
-    background: transparent; color: var(--fg);
-    font: 17px/1.7 Georgia, "Iowan Old Style", serif;
-  }
-
-  @media (max-width: 720px) {
-    body { flex-direction: column; gap: 24px; padding: 20px 16px; }
-    aside { flex: none; max-width: 320px; }
-  }
-</style>
-</head>
-<body>
-<aside>
-  <div class="cal-head">
-    <button id="prev" aria-label="Previous month">‹</button>
-    <span id="month"></span>
-    <button id="next" aria-label="Next month">›</button>
-  </div>
-  <div class="grid" id="grid"></div>
-  {% if day.isoformat() != today %}<a class="today-link" href="/">Go to today</a>{% endif %}
-</aside>
-<main>
+{% extends "base.html" %}
+{% block title %}{{ day.strftime("%b %-d, %Y") }}{% endblock %}
+{% block main %}
   <header>
-    <h1>{{ day.strftime("%A, %B %-d, %Y") }}</h1>
-    <span class="head-right">
+    <div class="day-nav">
+      <a id="prev-day" href="/{{ prev }}" aria-label="Previous day">‹</a>
+      <h1>{{ day.strftime("%A, %B %-d, %Y") }}</h1>
+      <a id="next-day" href="/{{ next }}" aria-label="Next day">›</a>
+    </div>
+    <div class="meta">
+      <span id="words"></span>
       <span id="status"></span>
+      {% if has_history %}<a href="/{{ day.isoformat() }}/history">History</a>{% endif %}
       <button id="inbox-btn" title="Add to GTD inbox" aria-label="Add to GTD inbox">+</button>
-    </span>
+    </div>
   </header>
-  <textarea id="body" spellcheck="true" autofocus placeholder="Write…">{{ body }}</textarea>
-</main>
-<dialog id="inbox">
-  <form method="dialog"><input name="title" placeholder="Add to GTD inbox…" autocomplete="off"></form>
-</dialog>
+  <div id="ed" class="ed" contenteditable="plaintext-only" spellcheck="true" data-placeholder="Write…"></div>
+  <dialog id="inbox">
+    <form method="dialog"><input name="title" placeholder="Add to GTD inbox…" autocomplete="off"></form>
+  </dialog>
+{% endblock %}
+{% block scripts %}
 <script>
-const DAY = "{{ day.isoformat() }}";
-const TODAY = "{{ today }}";
-const DAYS = new Set({{ days | tojson }});
-
-// Calendar
-const pad = n => String(n).padStart(2, "0");
-let [y, m] = DAY.split("-").map(Number);
-function render() {
-  const grid = document.getElementById("grid");
-  document.getElementById("month").textContent =
-    new Date(y, m - 1).toLocaleString("en-US", { month: "long", year: "numeric" });
-  grid.innerHTML = ["S", "M", "T", "W", "T", "F", "S"].map(d => `<div class="dow">${d}</div>`).join("");
-  const first = new Date(y, m - 1, 1).getDay();
-  const n = new Date(y, m, 0).getDate();
-  for (let i = 0; i < first; i++) grid.append(document.createElement("div"));
-  for (let d = 1; d <= n; d++) {
-    const iso = `${y}-${pad(m)}-${pad(d)}`;
-    const a = document.createElement("a");
-    a.href = "/" + iso;
-    a.textContent = d;
-    if (DAYS.has(iso)) a.classList.add("has");
-    if (iso === TODAY) a.classList.add("today");
-    if (iso === DAY) a.classList.add("sel");
-    grid.append(a);
-  }
-}
-document.getElementById("prev").onclick = () => { if (--m < 1) { m = 12; y--; } render(); };
-document.getElementById("next").onclick = () => { if (++m > 12) { m = 1; y++; } render(); };
-render();
-
-// Autosave
-const ta = document.getElementById("body");
-const status = document.getElementById("status");
-let saved = ta.value, timer = null;
-ta.setSelectionRange(ta.value.length, ta.value.length);
-function save(keepalive = false) {
-  clearTimeout(timer);
-  const text = ta.value;
-  if (text === saved) return;
-  status.textContent = "Saving…";
-  fetch("/api/entries/" + DAY, { method: "PUT", body: text, keepalive })
-    .then(r => {
-      if (!r.ok) throw new Error(r.status);
-      saved = text;
-      status.textContent = "Saved";
-      if (text.trim()) DAYS.add(DAY); else DAYS.delete(DAY);
-      render();
-    })
-    .catch(() => { status.textContent = "Not saved — retrying"; timer = setTimeout(save, 3000); });
-}
-ta.addEventListener("input", () => {
-  status.textContent = "";
-  clearTimeout(timer);
-  timer = setTimeout(save, 800);
-});
-addEventListener("pagehide", () => save(true));
-document.addEventListener("visibilitychange", () => { if (document.hidden) save(true); });
-
-// GTD inbox capture: ⌘I (Mac) / Ctrl+I (Linux, Windows) or the + button
-const dlg = document.getElementById("inbox");
-const inp = dlg.querySelector("input");
-function openInbox() { inp.value = ""; dlg.showModal(); }
-const btn = document.getElementById("inbox-btn");
-btn.title += /Mac|iPhone|iPad/.test(navigator.platform) ? " (⌘I)" : " (Ctrl+I)";
-btn.onclick = openInbox;
-document.addEventListener("keydown", e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") { e.preventDefault(); openInbox(); }
-});
-dlg.querySelector("form").addEventListener("submit", () => {
-  const title = inp.value.trim();
-  if (!title) return;
-  status.textContent = "Adding to inbox…";
-  fetch("/api/inbox", { method: "POST", body: title })
-    .then(r => { if (!r.ok) throw new Error(r.status); status.textContent = "Added to inbox"; })
-    .catch(() => { status.textContent = "Inbox add failed"; inp.value = title; dlg.showModal(); });
-});
-dlg.addEventListener("close", () => ta.focus());
+const BODY = {{ body | tojson }};
+const VERSION = {{ version | tojson }};
 </script>
-</body>
-</html>
+<script src="{{ url_for('static', filename='editor.js') }}"></script>
+{% endblock %}

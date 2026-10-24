@@ -1,10 +1,16 @@
 # Journal
 
-A minimalist journal: one plain-text entry per day. `/` opens today's entry; the calendar links to other days (dots mark days with entries). Typing autosaves; clearing an entry deletes it.
+A minimalist journal: one Markdown entry per day. `/` opens today's entry; the calendar links to other days (dots mark days with entries; click the month name for a year view). Typing autosaves; clearing an entry deletes it.
+
+- **Editor** styles Markdown in place (`**bold**`, `*italic*`, `# headings`, `` `code` ``, `[links](…)`, `[[YYYY-MM-DD]]`); like Obsidian's live preview, the `**`/`_`/`[](url)` markers are hidden until the cursor touches them. ⌘/Ctrl-click opens a link.
+- **Conflicts**: saves carry the version they were based on; if another device saved first you choose "load theirs" or "keep mine". Returning to a tab pulls in remote edits.
+- **History**: the previous text is snapshotted roughly once per writing session (10-minute gap), on big deletions, on clearing, and on conflicts. Restore from `/<day>/history`.
+- **Search** (`/search?q=`, all words must match), **Export** (`/export.zip`, one `YYYY-MM-DD.md` per day — the importer reads it back).
+- **Keys** (outside the editor; Esc leaves it): ←/→ previous/next day, `t` today, `/` search. ⌘D (Mac) / Ctrl+D (Linux, Windows) goes to today from anywhere, including the editor.
 
 ⌘I (Mac) / Ctrl+I (Linux, Windows) (or the `+` by the date) opens a one-line box that adds a task to the GTD inbox. The server posts it to GTD's `/capture` at `GTD_URL` (default `http://127.0.0.1:5005`, i.e. GTD on the same VM, or `GTD dev` locally).
 
-Flask + SQLite (`entries(day, body, updated_at)`), hosted on `home` (see `GCP-home-server/NEW-APP.md`) at `https://home.<tailnet>.ts.net:8443`, local port 5006. Config: [deploy/journal.env.example](deploy/journal.env.example).
+Flask + SQLite (`entries(day, body, updated_at)`, `revisions(day, body, saved_at)`), hosted on `home` (see `GCP-home-server/NEW-APP.md`) at `https://home.<tailnet>.ts.net:8443`, local port 5006. Config: [deploy/journal.env.example](deploy/journal.env.example).
 
 ## Develop
 

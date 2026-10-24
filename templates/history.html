@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}History · {{ day.strftime("%b %-d, %Y") }}{% endblock %}
+{% block main %}
+  <header>
+    <h1><a class="back" href="/{{ day.isoformat() }}">{{ day.strftime("%A, %B %-d, %Y") }}</a> · History</h1>
+  </header>
+  {% if not revs %}<p class="muted">No earlier versions.</p>{% endif %}
+  <ul class="list">
+    {% for id, body, saved_at in revs %}
+    <li>
+      <details>
+        <summary><span class="when">{{ saved_at | localtime }}</span>{{ body[:90] }}{% if body | length > 90 %}…{% endif %}</summary>
+        <pre>{{ body }}</pre>
+        <form method="post" action="/{{ day.isoformat() }}/history/{{ id }}">
+          <button>Restore this version</button>
+        </form>
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+{% endblock %}

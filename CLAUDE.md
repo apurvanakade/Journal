@@ -1,0 +1,30 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Minimalist one-entry-per-day journal: Flask + SQLite, no build step, no JS framework, no test suite.
+
+## Commands
+
+```bash
+uv run flask --app app run --debug        # dev server, uses ./dev.db (override with JOURNAL_DB)
+uv run python scripts/import_obsidian.py ../Obsidian/Journal dev.db unmigrated   # Obsidian import
+git push home main                        # deploy
+```
+
+Production runs under gunicorn on the `home` server (port 5006, single worker + threads); config in [deploy/journal.env.example](deploy/journal.env.example). `TZ` matters: "today" and displayed times use server-local time, while stored timestamps are UTC.
+
+## Architecture
+
+- **[app.py](app.py)** is the whole backend. Schema lives in the `SCHEMA` string and is applied (`CREATE IF NOT EXISTS`) on every `connect()`; there are no migrations. Tables: `entries(day PK, body, updated_at)` and `revisions(day, body, saved_at)`. A blank body deletes the entry.
+- **Optimistic concurrency:** `entries.updated_at` doubles as the version. The client sends `X-Base-Version` on `PUT /api/entries/<day>`; a mismatch returns 409 with the server's text, and the rejected text is archived into `revisions` so nothing is lost. The save runs inside `BEGIN IMMEDIATE`.
+- **Revision snapshots** are taken only at session boundaries, not every autosave: when the previous save is older than `SESSION_GAP` (10 min), when the body shrinks by more than half or is cleared, or with `?overwrite`. Restoring from `/<day>/history` archives the current text first.
+- **Templates:** [templates/base.html](templates/base.html) holds the sidebar (search, calendar, export) and injects `DAY`, `SEL`, `TODAY`, `DAYS` as JS globals; every page view must pass `days=all_days(db)` and `today=...` for it. Pages extend it via `{% block main %}` / `{% block scripts %}`.
+- **Frontend** ([static/](static/)): `calendar.js` renders the sidebar calendar from `DAYS`. `editor.js` is a `contenteditable` editor that re-renders Markdown highlighting on every keystroke — the rendered HTML's `textContent` must equal the raw text exactly (markup only wraps, never adds/removes characters), because caret positions are tracked as plain-text offsets. Since re-rendering wipes native undo, the editor keeps its own undo history. It also handles debounced autosave, conflict UI, and refreshing on tab focus.
+- **Search** is `LIKE`-based (all terms must match, wildcards escaped); `/export.zip` dumps every entry as `journal/<day>.md`.
+- **GTD capture:** `POST /api/inbox` forwards a one-line title to `GTD_URL` + `/capture` (⌘I / Ctrl+I or the `+` button on the entry page).
+- `unmigrated/` (gitignored) holds Obsidian files the importer couldn't map to a `YYYY-MM-DD.md` day.
+
+## Keeping docs current
+
+Whenever a change adds, removes, or alters a feature, route, keyboard shortcut, env var, schema, or command, update [README.md](README.md) (user-facing behaviour) and this file (architecture and invariants) in the same change. Check that both still match the code before you finish.

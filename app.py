@@ -1,10 +1,14 @@
+import io
 import os
+import re
 import sqlite3
 import urllib.parse
 import urllib.request
-from datetime import date, datetime, timezone
+import zipfile
+from datetime import date, datetime, timedelta, timezone
 
-from flask import Flask, abort, g, redirect, render_template, request, url_for
+from flask import Flask, abort, g, redirect, render_template, request, send_file, url_for
+from markupsafe import Markup, escape
 
 DB_PATH = os.environ.get("JOURNAL_DB", "dev.db")
 GTD_URL = os.environ.get("GTD_URL", "http://127.0.0.1:5005")
@@ -13,9 +17,19 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries (
     day TEXT PRIMARY KEY,          -- YYYY-MM-DD
     body TEXT NOT NULL,
-    updated_at TEXT NOT NULL       -- UTC ISO timestamp
+    updated_at TEXT NOT NULL       -- UTC ISO timestamp; doubles as the version for conflict checks
 );
+CREATE TABLE IF NOT EXISTS revisions (
+    id INTEGER PRIMARY KEY,
+    day TEXT NOT NULL,
+    body TEXT NOT NULL,
+    saved_at TEXT NOT NULL         -- when this text was last current (UTC ISO)
+);
+CREATE INDEX IF NOT EXISTS revisions_day ON revisions (day);
 """
+
+# Snapshot the previous text only when it ends a writing session, not on every autosave.
+SESSION_GAP = timedelta(minutes=10)
 
 app = Flask(__name__)
 
@@ -48,6 +62,37 @@ def parse_day(s):
         abort(404)
 
 
+def now():
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def all_days(db):
+    return [r[0] for r in db.execute("SELECT day FROM entries ORDER BY day")]
+
+
+def archive(db, day, body, saved_at):
+    db.execute("INSERT INTO revisions (day, body, saved_at) VALUES (?, ?, ?)", (day, body, saved_at))
+
+
+def write(db, day, body):
+    """Upsert (or delete, if blank) and return the new version ("" when there's no entry)."""
+    if not body.strip():
+        db.execute("DELETE FROM entries WHERE day = ?", (day,))
+        return ""
+    version = now()
+    db.execute(
+        "INSERT INTO entries (day, body, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(day) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at",
+        (day, body, version),
+    )
+    return version
+
+
+@app.template_filter("localtime")
+def localtime(s):
+    return datetime.fromisoformat(s).astimezone().strftime("%b %-d, %Y, %-I:%M %p")
+
+
 @app.get("/")
 def today():
     return redirect(url_for("entry", day=date.today().isoformat()))
@@ -57,32 +102,119 @@ def today():
 def entry(day):
     d = parse_day(day)
     db = get_db()
-    row = db.execute("SELECT body FROM entries WHERE day = ?", (d.isoformat(),)).fetchone()
-    days = [r[0] for r in db.execute("SELECT day FROM entries ORDER BY day")]
+    row = db.execute("SELECT body, updated_at FROM entries WHERE day = ?", (d.isoformat(),)).fetchone()
+    has_history = db.execute("SELECT 1 FROM revisions WHERE day = ? LIMIT 1", (d.isoformat(),)).fetchone()
     return render_template(
         "index.html",
         day=d,
         body=row[0] if row else "",
-        days=days,
+        version=row[1] if row else "",
+        prev=(d - timedelta(days=1)).isoformat(),
+        next=(d + timedelta(days=1)).isoformat(),
+        has_history=bool(has_history),
+        days=all_days(db),
         today=date.today().isoformat(),
     )
+
+
+@app.get("/api/entries/<day>")
+def load(day):
+    d = parse_day(day).isoformat()
+    row = get_db().execute("SELECT body, updated_at FROM entries WHERE day = ?", (d,)).fetchone()
+    return {"body": row[0] if row else "", "version": row[1] if row else ""}
 
 
 @app.put("/api/entries/<day>")
 def save(day):
     d = parse_day(day).isoformat()
     body = request.get_data(as_text=True)
+    base = request.headers.get("X-Base-Version")  # version the client last saw; absent = no check
     db = get_db()
-    if body.strip():
-        db.execute(
-            "INSERT INTO entries (day, body, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(day) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at",
-            (d, body, datetime.now(timezone.utc).isoformat(timespec="seconds")),
-        )
-    else:
-        db.execute("DELETE FROM entries WHERE day = ?", (d,))
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        row = db.execute("SELECT body, updated_at FROM entries WHERE day = ?", (d,)).fetchone()
+        old, version = row if row else ("", "")
+        if base is not None and base != version:
+            # Someone else saved first. Keep the rejected text so neither side is lost.
+            if body.strip() and body != old:
+                archive(db, d, body, now())
+            db.commit()
+            return {"body": old, "version": version}, 409
+        if row and body != old and (
+            "overwrite" in request.args
+            or not body.strip()
+            or len(body) < len(old) / 2
+            or datetime.now(timezone.utc) - datetime.fromisoformat(version) > SESSION_GAP
+        ):
+            archive(db, d, old, version)
+        version = write(db, d, body)
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
+    return {"version": version}
+
+
+@app.get("/<day>/history")
+def history(day):
+    d = parse_day(day)
+    db = get_db()
+    revs = db.execute(
+        "SELECT id, body, saved_at FROM revisions WHERE day = ? ORDER BY saved_at DESC", (d.isoformat(),)
+    ).fetchall()
+    return render_template(
+        "history.html", day=d, revs=revs, days=all_days(db), today=date.today().isoformat()
+    )
+
+
+@app.post("/<day>/history/<int:rid>")
+def restore(day, rid):
+    d = parse_day(day).isoformat()
+    db = get_db()
+    rev = db.execute("SELECT body FROM revisions WHERE id = ? AND day = ?", (rid, d)).fetchone() or abort(404)
+    row = db.execute("SELECT body, updated_at FROM entries WHERE day = ?", (d,)).fetchone()
+    if row and row[0] != rev[0]:
+        archive(db, d, *row)
+    write(db, d, rev[0])
     db.commit()
-    return "", 204
+    return redirect(url_for("entry", day=d))
+
+
+def snippet(body, terms, width=90):
+    lower = body.lower()
+    i = min((lower.find(t) for t in terms if t in lower), default=0)
+    start = max(0, i - width // 3)
+    text = body[start : start + width].replace("\n", " ")
+    text = ("…" if start else "") + text + ("…" if start + width < len(body) else "")
+    pattern = re.compile("|".join(re.escape(t) for t in terms), re.IGNORECASE)
+    return Markup(pattern.sub(lambda m: Markup("<mark>%s</mark>") % m.group(0), str(escape(text))))
+
+
+@app.get("/search")
+def search():
+    q = request.args.get("q", "").strip()
+    terms = [t.lower() for t in q.split()]
+    db = get_db()
+    results = []
+    if terms:
+        like = " AND ".join(["body LIKE ? ESCAPE '\\'"] * len(terms))
+        args = ["%" + re.sub(r"([%_\\])", r"\\\1", t) + "%" for t in terms]
+        rows = db.execute(f"SELECT day, body FROM entries WHERE {like} ORDER BY day DESC", args)
+        results = [(date.fromisoformat(day), snippet(body, terms)) for day, body in rows]
+    return render_template(
+        "search.html", q=q, results=results, days=all_days(db), today=date.today().isoformat()
+    )
+
+
+@app.get("/export.zip")
+def export():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for day, body in get_db().execute("SELECT day, body FROM entries ORDER BY day"):
+            z.writestr(f"journal/{day}.md", body)
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"journal-{date.today().isoformat()}.zip")
 
 
 @app.post("/api/inbox")
