@@ -3,11 +3,13 @@
 
 // --- Markdown highlighting. Output text must equal the input exactly; we only wrap it. ---
 const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+// Non-prose (markers, URLs, links, code) is excluded from the browser's spellcheck.
+const NS = ' spellcheck="false"';
 // Markers; `hide` ones are only shown while the caret touches their .fmt element (see reveal()).
-const mk = (s, hide) => `<span class="md${hide ? " hide" : ""}">${esc(s)}</span>`;
+const mk = (s, hide) => `<span class="md${hide ? " hide" : ""}"${NS}>${esc(s)}</span>`;
 const link = (href, text) =>
   /^(https?:|mailto:|\/)/i.test(href)
-    ? `<a href="${esc(href).replace(/"/g, "&quot;")}">${esc(text)}</a>`
+    ? `<a href="${esc(href).replace(/"/g, "&quot;")}"${NS}>${esc(text)}</a>`
     : esc(text);
 
 const INLINE = new RegExp([
@@ -25,10 +27,10 @@ function inline(s) {
   for (const m of s.matchAll(INLINE)) {
     out += esc(s.slice(i, m.index));
     i = m.index + m[0].length;
-    if (m[1]) out += `<code class="fmt">${mk(m[1], 1)}${esc(m[2])}${mk(m[1], 1)}</code>`;
+    if (m[1]) out += `<code class="fmt"${NS}>${mk(m[1], 1)}${esc(m[2])}${mk(m[1], 1)}</code>`;
     else if (m[3]) {
       const day = m[3].match(/^\d{4}-\d{2}-\d{2}/);
-      out += `<span class="fmt">${mk("[[", 1)}${day ? link("/" + day[0], m[3]) : esc(m[3])}${mk("]]", 1)}</span>`;
+      out += `<span class="fmt"${NS}>${mk("[[", 1)}${day ? link("/" + day[0], m[3]) : esc(m[3])}${mk("]]", 1)}</span>`;
     }
     else if (m[4]) out += `<span class="fmt">${mk("[", 1)}${link(m[5], m[4])}${mk(`](${m[5]})`, 1)}</span>`;
     else if (m[6]) out += link(m[6], m[6]);
@@ -56,8 +58,8 @@ function markdown(text) {
   let fence = false;
   const lines = text.split("\n");
   return lines.map((line, i) => {
-    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return `<span class="md code-line">${esc(line)}</span>`; }
-    if (fence) return `<span class="code-line">${esc(line)}</span>`;
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return `<span class="md code-line"${NS}>${esc(line)}</span>`; }
+    if (fence) return `<span class="code-line"${NS}>${esc(line)}</span>`;
     if (!line) return "";
     const tight = ITEM.test(line) && i + 1 < lines.length && ITEM.test(lines[i + 1]);
     return `<span class="${tight ? "li" : "p"}">${lineHtml(line)}</span>`;
@@ -261,6 +263,23 @@ addEventListener("pageshow", e => { if (e.persisted) refresh(); });
 addEventListener("focus", refresh);
 document.addEventListener("visibilitychange", () => { if (document.hidden) save(true); else refresh(); });
 
+// Spellcheck toggle (remembered per browser). Re-rendering makes the browser drop or redo its underlines.
+const spellBtn = document.getElementById("spell-btn");
+function setSpell(on) {
+  ed.spellcheck = on;
+  spellBtn.classList.toggle("off", !on);
+  spellBtn.setAttribute("aria-pressed", on);
+}
+spellBtn.onclick = () => {
+  const on = !ed.spellcheck;
+  try { localStorage.spellcheck = on ? "on" : "off"; } catch (e) {}
+  setSpell(on);
+  const text = getText(), sel = getSel();
+  ed.innerHTML = "";
+  paint(text, sel);
+  ed.focus();
+};
+
 // GTD inbox capture: ⌘I (Mac) / Ctrl+I (Linux, Windows) or the + button
 const dlg = document.getElementById("inbox");
 const inp = dlg.querySelector("input");
@@ -281,6 +300,9 @@ dlg.querySelector("form").addEventListener("submit", () => {
 });
 dlg.addEventListener("close", () => ed.focus());
 
+let spellOn = true;
+try { spellOn = localStorage.spellcheck !== "off"; } catch (e) {}
+setSpell(spellOn);
 paint(BODY);
 changed(BODY);
 clearTimeout(timer);

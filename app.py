@@ -5,6 +5,7 @@ import sqlite3
 import urllib.parse
 import urllib.request
 import zipfile
+from difflib import SequenceMatcher
 from datetime import date, datetime, timedelta, timezone
 
 from flask import Flask, abort, g, redirect, render_template, request, send_file, url_for
@@ -30,6 +31,8 @@ CREATE INDEX IF NOT EXISTS revisions_day ON revisions (day);
 
 # Snapshot the previous text only when it ends a writing session, not on every autosave.
 SESSION_GAP = timedelta(minutes=10)
+# ...and only if it differs from the newest snapshot by at least this many words, so typo fixes don't pile up.
+MIN_CHANGED_WORDS = 10
 
 app = Flask(__name__)
 
@@ -72,6 +75,29 @@ def all_days(db):
 
 def archive(db, day, body, saved_at):
     db.execute("INSERT INTO revisions (day, body, saved_at) VALUES (?, ?, ?)", (day, body, saved_at))
+
+
+def word_ops(a, b):
+    return [op for op in SequenceMatcher(None, a.split(), b.split(), autojunk=False).get_opcodes() if op[0] != "equal"]
+
+
+def changed_words(a, b):
+    return sum(max(i2 - i1, j2 - j1) for _, i1, i2, j1, j2 in word_ops(a, b))
+
+
+def contained(a, b):
+    """True if b keeps every word of a in order, i.e. b only added to a."""
+    return all(op == "insert" for op, *_ in word_ops(a, b))
+
+
+def needs_snapshot(db, day, old):
+    """Called when `old` ends a session. First drop snapshots that `old` merely extended (nothing in
+    them was lost), then snapshot `old` unless it's within a few words of the newest one left."""
+    while (last := db.execute(
+        "SELECT id, body FROM revisions WHERE day = ? ORDER BY saved_at DESC LIMIT 1", (day,)
+    ).fetchone()) and contained(last[1], old):
+        db.execute("DELETE FROM revisions WHERE id = ?", (last[0],))
+    return not last or changed_words(last[1], old) >= MIN_CHANGED_WORDS
 
 
 def write(db, day, body):
@@ -145,6 +171,7 @@ def save(day):
             or not body.strip()
             or len(body) < len(old) / 2
             or datetime.now(timezone.utc) - datetime.fromisoformat(version) > SESSION_GAP
+            and needs_snapshot(db, d, old)
         ):
             archive(db, d, old, version)
         version = write(db, d, body)
