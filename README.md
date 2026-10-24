@@ -9,9 +9,9 @@ A minimalist journal: one Markdown entry per day. `/` opens today's entry; the c
 - **Search** (`/search?q=`, all words must match), **Export** (`/export.zip`, one `YYYY-MM-DD.md` per day — the importer reads it back).
 - **Keys** (outside the editor; Esc leaves it): ←/→ previous/next day, `t` today, `/` search. ⌘D (Mac) / Ctrl+D (Linux, Windows) goes to today from anywhere, including the editor.
 
-⌘I (Mac) / Ctrl+I (Linux, Windows) (or the `+` by the date) opens a one-line box that adds a task to the GTD inbox. The server posts it to GTD's `/capture` at `GTD_URL` (default `http://127.0.0.1:5005`, i.e. GTD on the same VM, or `GTD dev` locally).
+⌘I (Mac) / Ctrl+I (Linux, Windows) (or the `+` by the date) opens a one-line box that posts a task to `GTD_URL` + `/capture` (default `http://127.0.0.1:5005`). This is optional — point it at any endpoint that accepts a `title` form field (e.g. your own task inbox), or leave it as-is with nothing listening there and the button will just fail with a 502.
 
-Flask + SQLite (`entries(day, body, updated_at)`, `revisions(day, body, saved_at)`), hosted on `home` (see `GCP-home-server/NEW-APP.md`) at `https://home.<tailnet>.ts.net:8443`, local port 5006. Config: [deploy/journal.env.example](deploy/journal.env.example).
+Flask + SQLite (`entries(day, body, updated_at)`, `revisions(day, body, saved_at)`) — a single process, no external services or cloud platform required. Config: [deploy/journal.env.example](deploy/journal.env.example).
 
 ## Develop
 
@@ -21,9 +21,7 @@ uv run flask --app app run --debug        # uses ./dev.db
 
 ## Deploy
 
-```bash
-git push home main
-```
+Runs anywhere Python runs. Copy [deploy/journal.env.example](deploy/journal.env.example), set `JOURNAL_DB` to a writable path and `TZ` to your timezone, then run the `CMD` under any process manager (systemd, supervisor, …) behind whatever reverse proxy you use for TLS. The author's own deploy is `git push home main` to a bare repo whose post-receive hook reruns gunicorn — one option among many, not required.
 
 ## Importing from Obsidian
 
