@@ -183,7 +183,7 @@ function changed(text) {
   if (conflict) return;
   status.textContent = "";
   clearTimeout(timer);
-  timer = setTimeout(save, 800);
+  timer = setTimeout(save, 5000);
 }
 
 function save(keepalive = false, overwrite = false) {
@@ -244,6 +244,7 @@ function refresh() {
   }).catch(() => {});
 }
 
+ed.addEventListener("blur", () => save());
 addEventListener("pagehide", () => save(true));
 addEventListener("pageshow", e => { if (e.persisted) refresh(); });
 addEventListener("focus", refresh);
