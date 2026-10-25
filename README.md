@@ -3,15 +3,14 @@
 A minimalist journal: one Markdown entry per day. `/` opens today's entry; the calendar links to other days (dots mark days with entries; click the month name for a year view). Typing autosaves after 5 seconds of idle (or when you leave the editor or tab); clearing an entry deletes it.
 
 - **Editor** styles Markdown in place (`**bold**`, `*italic*`, `# headings`, `` `code` ``, `[links](…)`, `[[YYYY-MM-DD]]`); like Obsidian's live preview, the `**`/`_`/`[](url)` markers are hidden until the cursor touches them. Each line is a paragraph, with a small gap after it (like LaTeX's `parskip`); consecutive list items stay tight. ⌘/Ctrl-click opens a link. Spelling is checked by the browser's spellchecker, skipping Markdown markers, links, URLs, `[[…]]` and code; the `abc` button by the date turns it off or on (remembered per browser).
-- **Conflicts**: saves carry the version they were based on; if another device saved first you choose "load theirs" or "keep mine". Returning to a tab pulls in remote edits.
-- **History**: the previous text is snapshotted roughly once per writing session (10-minute gap) — skipped when it differs from the newest snapshot by fewer than 10 words or is itself under 10 words, and earlier snapshots are dropped once a later session has only added to them, so typo fixes and continued writing don't clutter history — and always on big deletions, on clearing, and on conflicts. Restore from `/<day>/history`.
+- **Conflicts**: saves carry the version they were based on; if another device saved first you choose "load theirs", "keep mine" (the other text is discarded), or "merge", which puts both into the editor with git-style `<<<<<<< mine` / `=======` / `>>>>>>> theirs` markers around the lines that differ for you to tidy up. Returning to a tab pulls in remote edits.
 - **Theme**: follows the system light/dark setting; the ◐ button next to search overrides it (remembered per browser).
 - **Search** (`/search?q=`, all words must match), **Export** (`/export.zip`, one `YYYY-MM-DD.md` per day — the importer reads it back).
 - **Keys** (outside the editor; Esc leaves it): ←/→ previous/next day, `t` today, `/` search. ⌘D (Mac) / Ctrl+D (Linux, Windows) goes to today from anywhere, including the editor.
 
 ⌘I (Mac) / Ctrl+I (Linux, Windows) (or the `+` by the date) opens a one-line box that posts a task to `GTD_URL` + `/capture` (default `http://127.0.0.1:5005`). This is optional — point it at any endpoint that accepts a `title` form field (e.g. your own task inbox), or leave it as-is with nothing listening there and the button will just fail with a 502.
 
-Flask + SQLite (`entries(day, body, updated_at)`, `revisions(day, body, saved_at)`) — a single process, no external services or cloud platform required. Config: [deploy/journal.env.example](deploy/journal.env.example).
+Flask + SQLite (`entries(day, body, updated_at)`) — a single process, no external services or cloud platform required. Config: [deploy/journal.env.example](deploy/journal.env.example).
 
 ## Develop
 

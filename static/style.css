@@ -73,7 +73,6 @@ header {
   margin-bottom: 16px;
 }
 h1 { font-size: 22px; font-weight: 600; margin: 0; }
-h1 a.back { text-decoration: none; }
 .day-nav { display: flex; align-items: baseline; gap: 6px; margin-left: -10px; }
 .day-nav a {
   color: var(--muted); text-decoration: none; font-size: 20px; padding: 0 6px; border-radius: 4px;
@@ -124,14 +123,9 @@ dialog input {
 
 .list { list-style: none; margin: 0; padding: 0; }
 .list li { border-top: 1px solid var(--line); }
-.list li > a, .list summary { display: block; padding: 10px 0; text-decoration: none; cursor: pointer; }
+.list li > a { display: block; padding: 10px 0; text-decoration: none; cursor: pointer; }
 .list .when { display: block; font-size: 13px; color: var(--muted); }
 .list mark { background: var(--mark); color: inherit; border-radius: 2px; }
-.list pre { white-space: pre-wrap; font: 15px/1.6 Georgia, serif; margin: 0 0 12px; }
-.list form button {
-  margin-bottom: 14px; padding: 4px 12px; background: var(--accent); color: var(--accent-fg);
-  border: 0; border-radius: 4px; cursor: pointer;
-}
 
 @media (max-width: 720px) {
   body { display: flex; flex-direction: column; gap: 24px; padding: 20px 16px; }

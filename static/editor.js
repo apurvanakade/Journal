@@ -199,14 +199,14 @@ function changed(text) {
   timer = setTimeout(save, 5000);
 }
 
-function save(keepalive = false, overwrite = false) {
+function save(keepalive = false) {
   clearTimeout(timer);
   const text = getText();
   if (conflict || text === saved) return;
   if (inflight && !keepalive) { again = true; return; }
   inflight = true;
   status.textContent = "Saving…";
-  fetch("/api/entries/" + DAY + (overwrite ? "?overwrite" : ""), {
+  fetch("/api/entries/" + DAY, {
     method: "PUT", body: text, keepalive, headers: { "X-Base-Version": version },
   })
     .then(async r => {
@@ -235,16 +235,39 @@ function load({ body, version: v }) {
 function showConflict(theirs) {
   conflict = theirs;
   clearTimeout(timer);
-  status.innerHTML = "Edited on another device — <button id=theirs>load theirs</button> · <button id=mine>keep mine</button>";
+  status.innerHTML = "Edited on another device — <button id=theirs>load theirs</button> · <button id=mine>keep mine</button> · <button id=merge>merge</button>";
   document.getElementById("theirs").onclick = () => {
     load(theirs);
-    status.textContent = "Loaded (yours is in History)";
+    status.textContent = "Loaded theirs";
   };
   document.getElementById("mine").onclick = () => {
     conflict = null;
     version = theirs.version;
-    save(false, true);
+    save();
   };
+  document.getElementById("merge").onclick = () => {
+    conflict = null;
+    version = theirs.version;
+    const text = merge(getText(), theirs.body);
+    paint(text, [text.length, text.length]);
+    record(text, [text.length, text.length]);
+    changed(text);
+    status.textContent = "Merged — fix the marked lines";
+  };
+}
+
+// Git-style conflict markers around the lines that differ (shared leading/trailing lines kept once).
+function merge(mine, theirs) {
+  const a = mine.split("\n"), b = theirs.split("\n");
+  let p = 0, s = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  while (s < a.length - p && s < b.length - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+  return [
+    ...a.slice(0, p),
+    "<<<<<<< mine", ...a.slice(p, a.length - s),
+    "=======", ...b.slice(p, b.length - s),
+    ">>>>>>> theirs", ...a.slice(a.length - s),
+  ].join("\n");
 }
 
 // Pick up edits made elsewhere when coming back to this tab.
