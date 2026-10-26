@@ -292,6 +292,17 @@ ed.addEventListener("keydown", e => {
     insert(s);
   }
   else if (e.key === "Escape") { if (hint) unhint(); else ed.blur(); }
+  // Alt/Option+T: "**09:05 am.** "; with Shift, a "## 09:05 am." heading on its own line.
+  // By code, not key, since Option+T types "†" on a Mac.
+  else if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === "KeyT") {
+    e.preventDefault();
+    unhint();
+    const d = new Date(), h = d.getHours();
+    const now = `${String(h % 12 || 12).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "am" : "pm"}.`;
+    if (!e.shiftKey) return insert(`**${now}** `);
+    const t = getText(), a = (getSel() ?? [t.length])[0];
+    insert(`${a && t[a - 1] !== "\n" ? "\n" : ""}## ${now}\n`);
+  }
 });
 
 // Links: ⌘/Ctrl-click to open (a plain tap on touch screens); a plain click just places the caret.
