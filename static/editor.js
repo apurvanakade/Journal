@@ -46,7 +46,8 @@ const ITEM = /^(\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?)(.*)/;
 function lineHtml(line) {
   let m;
   if ((m = line.match(/^(#{1,6} )(.*)/))) return `<span class="fmt h h${m[1].length - 1}">${mk(m[1], 1)}${inline(m[2])}</span>`;
-  if (/^ {0,3}([-*_])( ?\1){2,}\s*$/.test(line)) return mk(line);
+  // Rule: a full-width line; the marker text stays in place (transparent) so the caret can land on it.
+  if (/^ {0,3}([-*_])( ?\1){2,}\s*$/.test(line)) return `<span class="fmt hr">${mk(line)}</span>`;
   if ((m = line.match(ITEM))) return mk(m[1]) + inline(m[2]);
   if ((m = line.match(/^(>+ ?)(.*)/))) return `<span class="quote">${mk(m[1])}${inline(m[2])}</span>`;
   return inline(line);

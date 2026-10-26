@@ -115,6 +115,8 @@ dialog input {
 .ed .h { font-weight: 700; }
 .ed .h1 { font-size: 1.4em; }
 .ed .h2 { font-size: 1.2em; }
+.ed .hr { display: inline-block; width: 100%; background: linear-gradient(var(--muted), var(--muted)) center / 100% 1px no-repeat; }
+.ed .hr:not(.md-on) > .md { color: transparent; }
 .ed .quote { color: var(--muted); font-style: italic; }
 .ed code, .ed .code-line { font: 0.88em/1 ui-monospace, Menlo, monospace; }
 .ed code { background: var(--line); border-radius: 3px; }
