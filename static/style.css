@@ -120,6 +120,7 @@ dialog input {
 .ed code { background: var(--line); border-radius: 3px; }
 .ed a { text-decoration-color: var(--muted); text-underline-offset: 2px; }
 .mod .ed a { cursor: pointer; }
+.ghost { position: fixed; pointer-events: none; white-space: pre; color: var(--faint); }
 
 .list { list-style: none; margin: 0; padding: 0; }
 .list li { border-top: 1px solid var(--line); }

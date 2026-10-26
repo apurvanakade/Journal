@@ -147,28 +147,150 @@ function edited() {
   record(text, sel);
   changed(text);
 }
-function insert(s) {
-  const t = getText(), [a, b] = getSel() ?? [t.length, t.length];
-  const text = t.slice(0, a) + s + t.slice(b);
-  paint(text, [a + s.length, a + s.length]);
-  record(text, [a + s.length, a + s.length]);
+function apply(text, caret) {
+  paint(text, [caret, caret]);
+  record(text, [caret, caret]);
   changed(text);
 }
+// Insert s at the selection, also replacing the `back` characters before it.
+function insert(s, back = 0) {
+  const t = getText(), [a, b] = getSel() ?? [t.length, t.length];
+  apply(t.slice(0, a - back) + s + t.slice(b), a - back + s.length);
+}
+
+// --- Typing assists: sentence capitals, "i" → "I", names you capitalize, word completion (Tab). ---
+// Touch keyboards (iOS and iPadOS, even with a hardware keyboard, and Android) already do all of
+// this natively, so there we stay out of the way.
+const assist = !(/iPhone|iPad|iPod|Android/.test(navigator.userAgent) ||
+  (/Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1));
+let vocab = [], proper = {};   // /api/words: lowercase words by frequency; lowercase → "Name"
+if (assist) fetch("/api/words").then(r => r.json()).then(d => { vocab = d.words; proper = d.proper; }).catch(() => {});
+const declined = new Set();    // words whose fix you reverted; left alone for the rest of the visit
+let fix = null, noCapAt = -1;  // last fix (Backspace right after reverts it); where you deleted a capital
+
+// Code blocks, inline code and URLs are left alone.
+function plain(before) {
+  const line = before.slice(before.lastIndexOf("\n") + 1);
+  return (before.match(/^\s*(```|~~~)/gm) || []).length % 2 === 0 &&
+    (line.match(/`/g) || []).length % 2 === 0 && !/(:\/\/|www\.)\S*$/.test(line);
+}
+function sentenceStart(before) {
+  const line = before.slice(before.lastIndexOf("\n") + 1).replace(/^(#{1,6} |\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?|>+ ?)/, "");
+  return /^["'“‘(*_]*$/.test(line) ||
+    /(?<!\b(?:e\.g|i\.e|vs|cf|etc|[ap]\.m)|\.\.)[.!?]["'”’)\]*_]*\s+["'“‘(*_]*$/.test(line);
+}
+
+// Called for each typed character; returns true if it inserted c itself.
+function assistType(c) {
+  const last = fix;
+  fix = null;
+  if (!assist || composing || !c) return false;
+  const t = getText(), sel = getSel();
+  if (!sel || sel[0] !== sel[1]) return false;
+  const a = sel[0], before = t.slice(0, a);
+  if (!plain(before)) return false;
+  if (/^\p{Ll}$/u.test(c)) {
+    if (a === noCapAt) { noCapAt = -1; return false; }  // you deleted the capital: keep it lowercase
+    if (!sentenceStart(before) || /[\p{L}\p{N}]/u.test(t[a] || "")) return false;
+    insert(c.toUpperCase());
+    fix = { cap: true, at: a, caret: a + 1 };
+    return true;
+  }
+  if (!/^[\s.,;:!?)\]"'”’]$/.test(c)) return false;
+  const m = before.match(/(?:^|[\s(\["“‘*_~>])([\p{L}'’]+)$/u);
+  const w = m?.[1];
+  if (!w || w !== w.toLowerCase() || declined.has(w)) return false;
+  let to = null;
+  if (/^i(['’](m|ll|ve|d))?$/.test(w)) to = "I" + w.slice(1);
+  else if (!/['’]/.test(c)) {
+    const [, base, s] = w.match(/^(.*?)((?:['’]s)?)$/);
+    if (proper[base]) to = proper[base] + s;
+  }
+  if (!to) return false;
+  insert(to + c, w.length);
+  fix = { at: a - w.length, from: w, to, caret: a + 1 };
+  return true;
+}
+// Backspace straight after a fix: a capitalized word goes back to how you typed it;
+// a capitalized sentence start is deleted as usual, and retyping it lowercase sticks.
+function revert(last) {
+  const sel = getSel();
+  if (!last || !sel || sel[0] !== sel[1] || sel[0] !== last.caret) return false;
+  if (last.cap) { noCapAt = last.at; return false; }
+  const t = getText();
+  declined.add(last.from);
+  apply(t.slice(0, last.at) + last.from + t.slice(last.at + last.to.length), last.caret);
+  return true;
+}
+
+// Completion: the most frequent known word starting with the 3+ letters before the caret,
+// shown faintly after it. Tab accepts; anything else ignores it.
+const ghost = document.createElement("span");
+ghost.className = "ghost";
+ghost.hidden = true;
+document.body.append(ghost);
+let hint = "", hintAt = -1;
+function unhint() { hint = ""; hintAt = -1; ghost.hidden = true; }
+function suggest() {
+  unhint();
+  const sel = getSel();
+  if (!assist || !vocab.length || composing || !sel || sel[0] !== sel[1]) return;
+  const t = getText(), a = sel[0], before = t.slice(0, a);
+  if (/[\p{L}\p{N}]/u.test(t[a] || "") || !plain(before)) return;
+  const p = before.match(/(?:^|[^\p{L}\p{N}'’])(\p{L}{3,})$/u)?.[1];
+  if (!p) return;
+  const lp = p.toLowerCase(), w = vocab.find(w => w.length >= p.length + 2 && w.startsWith(lp));
+  if (!w) return;
+  const [node, off] = pointAt(a), r = document.createRange();
+  r.setStart(node, off);
+  const rect = r.getClientRects()[0] ?? r.getBoundingClientRect();
+  if (!rect.height) return;
+  const cs = getComputedStyle(node.nodeType === Node.TEXT_NODE ? node.parentElement : node);
+  Object.assign(ghost.style, {
+    left: rect.left + "px", top: rect.top + "px", lineHeight: rect.height + "px",
+    fontFamily: cs.fontFamily, fontSize: cs.fontSize, fontWeight: cs.fontWeight, fontStyle: cs.fontStyle,
+  });
+  hint = (proper[w] ?? w).slice(p.length);
+  hintAt = a;
+  ghost.textContent = hint;
+  ghost.hidden = false;
+}
+document.addEventListener("selectionchange", () => {
+  const sel = getSel();
+  if (hint && sel?.[0] !== hintAt) unhint();
+  if (fix && sel?.[0] !== fix.caret) fix = null;
+});
+ed.addEventListener("blur", unhint);
+addEventListener("scroll", unhint, true);
+addEventListener("resize", unhint);
 
 let composing = false;
-ed.addEventListener("compositionstart", () => { composing = true; });
+ed.addEventListener("compositionstart", () => { composing = true; unhint(); });
 ed.addEventListener("compositionend", () => { composing = false; edited(); });
-ed.addEventListener("input", () => { if (!composing) edited(); });
+ed.addEventListener("input", e => {
+  if (composing) return;
+  edited();
+  if (e.inputType === "insertText") suggest();
+});
 ed.addEventListener("beforeinput", e => {
-  const t = e.inputType;
+  const t = e.inputType, last = fix;
+  if (t !== "insertText") fix = null;
   if (t === "historyUndo" || t === "historyRedo") { e.preventDefault(); step(t === "historyUndo" ? -1 : 1); }
-  else if (t === "insertParagraph" || t === "insertLineBreak") { e.preventDefault(); insert("\n"); }
+  else if (t === "insertParagraph" || t === "insertLineBreak") { e.preventDefault(); if (!assistType("\n")) insert("\n"); fix = null; }
+  else if (t === "deleteContentBackward") { if (revert(last)) e.preventDefault(); }
+  else if (t === "insertText" && assistType(e.data)) { e.preventDefault(); suggest(); }
 });
 ed.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if ((e.metaKey || e.ctrlKey) && k === "z") { e.preventDefault(); step(e.shiftKey ? 1 : -1); }
   else if (e.ctrlKey && k === "y") { e.preventDefault(); step(1); }
-  else if (e.key === "Escape") ed.blur();
+  else if (e.key === "Tab" && hint && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    const s = hint;
+    unhint();
+    insert(s);
+  }
+  else if (e.key === "Escape") { if (hint) unhint(); else ed.blur(); }
 });
 
 // Links: ⌘/Ctrl-click to open (a plain tap on touch screens); a plain click just places the caret.

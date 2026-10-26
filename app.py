@@ -151,6 +151,63 @@ def search():
     )
 
 
+# Typing assists (desktop): a vocabulary for word completion, and the words you always capitalize
+# mid-sentence (names, places) on at least two days, learned from the entries (names only from
+# NAMES_SINCE on; older entries taught too many title fragments). Cached until any entry changes.
+NAMES_SINCE = "2026-10-26"
+LINE_PREFIX = re.compile(r"^(#{1,6} |\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?|>+ ?)")
+NOISE = re.compile(r"`[^`]*`|\S*://\S*|\]\([^)]*\)|\[\[[^\]]*\]\]")
+TOKEN = re.compile(r"[^\W\d_]+(?:['’][^\W\d_]+)*")
+_words = (None, None)
+
+
+def vocabulary(db):
+    counts, lower, caps, caps_days = {}, {}, {}, {}
+    fence = False
+    for day, body in db.execute("SELECT day, body FROM entries"):
+        for line in body.split("\n"):
+            if re.match(r"\s*(```|~~~)", line):
+                fence = not fence
+            if fence or line.lstrip().startswith(("```", "~~~")):
+                continue
+            # Headings and table rows are Title Case, not evidence of a name.
+            titled = re.match(r"\s*(#|\|)", line) or re.search(r"\S {3,}\S", line)
+            line = NOISE.sub(" ", LINE_PREFIX.sub("", line))
+            end = None
+            for m in TOKEN.finditer(line):
+                start = end is None or re.search(r"[.!?]", line[end : m.start()])
+                end = m.end()
+                w = re.sub(r"['’]s$", "", m.group())
+                low = w.lower()
+                if len(low) < 2 or low == "i" or low.startswith(("i'", "i’")):
+                    continue
+                counts[low] = counts.get(low, 0) + 1
+                if w == low:
+                    lower[low] = lower.get(low, 0) + 1
+                elif day >= NAMES_SINCE and not start and not titled and w[0].isupper():
+                    caps.setdefault(low, {})
+                    caps[low][w] = caps[low].get(w, 0) + 1
+                    caps_days.setdefault(low, set()).add(day)
+        fence = False
+    proper = {}
+    for low, forms in caps.items():
+        n = sum(forms.values())
+        if len(caps_days[low]) >= 2 and lower.get(low, 0) * 10 < n:
+            proper[low] = max(forms, key=forms.get)
+    words = sorted((w for w, n in counts.items() if n >= 2 and len(w) >= 5), key=lambda w: -counts[w])
+    return {"words": words[:20000], "proper": proper}
+
+
+@app.get("/api/words")
+def words():
+    global _words
+    db = get_db()
+    key = db.execute("SELECT count(*), max(updated_at) FROM entries").fetchone()
+    if _words[0] != key:
+        _words = (key, vocabulary(db))
+    return _words[1]
+
+
 @app.get("/export.zip")
 def export():
     buf = io.BytesIO()
