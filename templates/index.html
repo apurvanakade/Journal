@@ -10,11 +10,22 @@
     <div class="meta">
       <span id="words"></span>
       <span id="status"></span>
+      <button id="ink-btn" title="Show / hide the drawing box" aria-label="Drawing box">✎</button>
       <button id="spell-btn" title="Spellcheck on / off" aria-label="Spellcheck">abc</button>
       <button id="inbox-btn" title="Add to GTD inbox" aria-label="Add to GTD inbox">+</button>
     </div>
   </header>
   <div id="ed" class="ed" contenteditable="plaintext-only" spellcheck="true" data-placeholder="Write…"></div>
+  <div id="ink" class="ink" hidden>
+    <div class="ink-bar">
+      <button data-tool="pen" class="on">pen</button>
+      <button data-tool="erase">eraser</button>
+      <button id="ink-undo">undo</button>
+      <button id="ink-clear">clear</button>
+      <span id="ink-status"></span>
+    </div>
+    <svg viewBox="0 0 700 396"></svg>
+  </div>
   <dialog id="inbox">
     <form method="dialog"><input name="title" placeholder="Add to GTD inbox…" autocomplete="off"></form>
   </dialog>
@@ -23,6 +34,9 @@
 <script>
 const BODY = {{ body | tojson }};
 const VERSION = {{ version | tojson }};
+const INK = {{ ink | tojson }};
+const INK_VERSION = {{ ink_version | tojson }};
 </script>
 <script src="{{ url_for('static', filename='editor.js') }}"></script>
+<script src="{{ url_for('static', filename='ink.js') }}"></script>
 {% endblock %}

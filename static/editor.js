@@ -349,7 +349,7 @@ function save(keepalive = false) {
       ({ version } = await r.json());
       saved = text;
       status.textContent = "Saved";
-      if (text.trim()) DAYS.add(DAY); else DAYS.delete(DAY);
+      if (text.trim()) DAYS.add(DAY); else if (!document.querySelector("#ink path")) DAYS.delete(DAY);
       renderCal();
     })
     .catch(() => { status.textContent = "Not saved — retrying"; timer = setTimeout(save, 3000); })

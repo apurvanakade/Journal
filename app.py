@@ -1,4 +1,5 @@
 import io
+import math
 import os
 import re
 import sqlite3
@@ -19,7 +20,14 @@ CREATE TABLE IF NOT EXISTS entries (
     body TEXT NOT NULL,
     updated_at TEXT NOT NULL       -- UTC ISO timestamp; doubles as the version for conflict checks
 );
+CREATE TABLE IF NOT EXISTS drawings (  -- optional scribble box under an entry; same versioning
+    day TEXT PRIMARY KEY,
+    body TEXT NOT NULL,            -- bare SVG <path>s, 700 units wide (see INK, ink_height)
+    updated_at TEXT NOT NULL
+);
 """
+# The only drawing markup accepted: it's put back into the page with innerHTML.
+INK = re.compile(r'(<path d="[ML0-9. ]+"></path>)*')
 
 app = Flask(__name__)
 
@@ -57,17 +65,22 @@ def now():
 
 
 def all_days(db):
-    return [r[0] for r in db.execute("SELECT day FROM entries ORDER BY day")]
+    return [r[0] for r in db.execute("SELECT day FROM entries UNION SELECT day FROM drawings ORDER BY day")]
 
 
-def write(db, day, body):
+def fetch(db, table, day):
+    row = db.execute(f"SELECT body, updated_at FROM {table} WHERE day = ?", (day,)).fetchone()
+    return row if row else ("", "")
+
+
+def write(db, table, day, body):
     """Upsert (or delete, if blank) and return the new version ("" when there's no entry)."""
     if not body.strip():
-        db.execute("DELETE FROM entries WHERE day = ?", (day,))
+        db.execute(f"DELETE FROM {table} WHERE day = ?", (day,))
         return ""
     version = now()
     db.execute(
-        "INSERT INTO entries (day, body, updated_at) VALUES (?, ?, ?) "
+        f"INSERT INTO {table} (day, body, updated_at) VALUES (?, ?, ?) "
         "ON CONFLICT(day) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at",
         (day, body, version),
     )
@@ -83,12 +96,15 @@ def today():
 def entry(day):
     d = parse_day(day)
     db = get_db()
-    row = db.execute("SELECT body, updated_at FROM entries WHERE day = ?", (d.isoformat(),)).fetchone()
+    body, version = fetch(db, "entries", d.isoformat())
+    ink, ink_version = fetch(db, "drawings", d.isoformat())
     return render_template(
         "index.html",
         day=d,
-        body=row[0] if row else "",
-        version=row[1] if row else "",
+        body=body,
+        version=version,
+        ink=ink,
+        ink_version=ink_version,
         prev=(d - timedelta(days=1)).isoformat(),
         next=(d + timedelta(days=1)).isoformat(),
         days=all_days(db),
@@ -96,28 +112,28 @@ def entry(day):
     )
 
 
-@app.get("/api/entries/<day>")
-def load(day):
-    d = parse_day(day).isoformat()
-    row = get_db().execute("SELECT body, updated_at FROM entries WHERE day = ?", (d,)).fetchone()
-    return {"body": row[0] if row else "", "version": row[1] if row else ""}
+@app.get("/api/<any(entries, drawings):table>/<day>")
+def load(table, day):
+    body, version = fetch(get_db(), table, parse_day(day).isoformat())
+    return {"body": body, "version": version}
 
 
-@app.put("/api/entries/<day>")
-def save(day):
+@app.put("/api/<any(entries, drawings):table>/<day>")
+def save(table, day):
     d = parse_day(day).isoformat()
     body = request.get_data(as_text=True)
+    if table == "drawings" and not INK.fullmatch(body):
+        abort(400)
     base = request.headers.get("X-Base-Version")  # version the client last saw; absent = no check
     db = get_db()
     db.execute("BEGIN IMMEDIATE")
     try:
-        row = db.execute("SELECT body, updated_at FROM entries WHERE day = ?", (d,)).fetchone()
-        old, version = row if row else ("", "")
+        old, version = fetch(db, table, d)
         if base is not None and base != version and body != old:
             db.rollback()
             return {"body": old, "version": version}, 409  # someone else saved first; the client asks
         if body != old:
-            version = write(db, d, body)
+            version = write(db, table, d, body)
         db.commit()
     except BaseException:
         db.rollback()
@@ -208,12 +224,24 @@ def words():
     return _words[1]
 
 
+SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 %d" fill="none" stroke="#2b2a28" '
+       'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">%s</svg>\n')
+
+
+def ink_height(body):
+    """The box height ink.js's fit() gives a drawing: 36-unit rows, 4 spare below the lowest stroke."""
+    low = max((float(y) for y in re.findall(r"[ML][\d.]+ ([\d.]+)", body)), default=0)
+    return max(11, math.ceil(low / 36) + 4) * 36
+
+
 @app.get("/export.zip")
 def export():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         for day, body in get_db().execute("SELECT day, body FROM entries ORDER BY day"):
             z.writestr(f"journal/{day}.md", body)
+        for day, body in get_db().execute("SELECT day, body FROM drawings ORDER BY day"):
+            z.writestr(f"journal/{day}.svg", SVG % (ink_height(body), body))
     buf.seek(0)
     return send_file(buf, mimetype="application/zip", as_attachment=True,
                      download_name=f"journal-{date.today().isoformat()}.zip")
