@@ -45,7 +45,7 @@ document.querySelector('.theme-toggle').addEventListener('click', () => {
   try { localStorage.theme = root.dataset.theme; } catch (e) {}
 });
 </script>
-<script src="{{ url_for('static', filename='calendar.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='calendar.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

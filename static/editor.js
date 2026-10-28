@@ -1,8 +1,11 @@
 // Editor: the entry is plain Markdown text, re-rendered with styling as you type.
-// Expects DAY, DAYS, renderCal (calendar.js) and BODY, VERSION from the page.
+// Expects DAY, DAYS and BODY, VERSION from the page.
+import { renderCal } from "./calendar.js";
+import { autosaver } from "./autosave.js";
 
 // --- Markdown highlighting. Output text must equal the input exactly; we only wrap it. ---
-const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+// Escaped the way the browser serializes text (&nbsp; included), so paint() can compare innerHTML.
+const esc = s => s.replace(/[&<>\u00a0]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\u00a0": "&nbsp;" })[c]);
 // Non-prose (markers, URLs, links, code) is excluded from the browser's spellcheck.
 const NS = ' spellcheck="false"';
 // Markers; `hide` ones are only shown while the caret touches their .fmt element (see reveal()).
@@ -69,7 +72,7 @@ function markdown(text) {
 
 // --- Text and caret as plain-text offsets ---
 const ed = document.getElementById("ed");
-const getText = () => ed.textContent;
+export const getText = () => ed.textContent;
 
 function offsetOf(node, off) {
   const r = document.createRange();
@@ -109,8 +112,7 @@ function paint(text, sel) {
 
 // Show hidden markers of formatting the caret/selection touches, like Obsidian's live preview.
 // Hidden text still counts in textContent and caret offsets, so nothing else changes.
-function reveal() {
-  const sel = getSel();
+function reveal(sel = getSel()) {
   const w = document.createTreeWalker(ed, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
   let pos = 0;
   for (let n; (n = w.nextNode()); ) {
@@ -119,7 +121,6 @@ function reveal() {
       n.classList.toggle("md-on", !!sel && pos <= sel[1] && pos + n.textContent.length >= sel[0]);
   }
 }
-document.addEventListener("selectionchange", reveal);
 
 // --- Undo history (re-rendering clears the browser's own) ---
 const hist = [{ text: BODY, sel: [BODY.length, BODY.length] }];
@@ -140,6 +141,14 @@ function step(d) {
   lastEdit = 0;
   paint(hist[hi].text, hist[hi].sel);
   changed(hist[hi].text);
+}
+// Replace the whole text (a load from the server, or a merge) as its own undo step.
+function replace(text) {
+  const end = [text.length, text.length];
+  paint(text, document.activeElement === ed ? end : null);
+  lastEdit = 0;
+  record(text, end);
+  count(text);
 }
 
 function edited() {
@@ -258,6 +267,7 @@ function suggest() {
 }
 document.addEventListener("selectionchange", () => {
   const sel = getSel();
+  reveal(sel);
   if (hint && sel?.[0] !== hintAt) unhint();
   if (fix && sel?.[0] !== fix.caret) fix = null;
 });
@@ -311,7 +321,7 @@ ed.addEventListener("click", e => {
   const a = e.target.closest("a");
   if (!a || !(e.metaKey || e.ctrlKey || touch.matches)) return;
   e.preventDefault();
-  if (a.getAttribute("href").startsWith("/")) location.href = a.href;
+  if (a.origin === location.origin) location.href = a.href;
   else window.open(a.href, "_blank", "noopener");
 });
 const mod = e => document.body.classList.toggle("mod", e.metaKey || e.ctrlKey);
@@ -322,72 +332,27 @@ addEventListener("blur", () => document.body.classList.remove("mod"));
 // --- Word count, autosave, conflicts ---
 const status = document.getElementById("status");
 const wordsEl = document.getElementById("words");
-let saved = BODY, version = VERSION, timer = null, inflight = false, again = false, conflict = null;
+const saver = autosaver({
+  url: "/api/entries/" + DAY, body: BODY, version: VERSION, delay: 5000,
+  status, label: "Edited on another device",
+  get: getText, set: replace,
+  saved: text => {
+    if (text.trim()) DAYS.add(DAY); else if (!document.querySelector("#ink path")) DAYS.delete(DAY);
+    renderCal();
+  },
+  merge: theirs => {
+    replace(merge(getText(), theirs));
+    saver.changed();
+  },
+});
 
-function changed(text) {
+function count(text) {
   const n = text.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
   wordsEl.textContent = n ? `${n} word${n === 1 ? "" : "s"}` : "";
-  if (conflict) return;
-  status.textContent = "";
-  clearTimeout(timer);
-  timer = setTimeout(save, 5000);
 }
-
-function save(keepalive = false) {
-  clearTimeout(timer);
-  const text = getText();
-  if (conflict || text === saved) return;
-  if (inflight && !keepalive) { again = true; return; }
-  inflight = true;
-  status.textContent = "Saving…";
-  fetch("/api/entries/" + DAY, {
-    method: "PUT", body: text, keepalive, headers: { "X-Base-Version": version },
-  })
-    .then(async r => {
-      if (r.status === 409) return showConflict(await r.json());
-      if (!r.ok) throw new Error(r.status);
-      ({ version } = await r.json());
-      saved = text;
-      status.textContent = "Saved";
-      if (text.trim()) DAYS.add(DAY); else if (!document.querySelector("#ink path")) DAYS.delete(DAY);
-      renderCal();
-    })
-    .catch(() => { status.textContent = "Not saved — retrying"; timer = setTimeout(save, 3000); })
-    .finally(() => { inflight = false; if (again) { again = false; save(); } });
-}
-
-function load({ body, version: v }) {
-  conflict = null;
-  saved = body;
-  version = v;
-  paint(body, document.activeElement === ed ? [body.length, body.length] : null);
-  record(body, [body.length, body.length]);
-  changed(body);
-  clearTimeout(timer);
-}
-
-function showConflict(theirs) {
-  conflict = theirs;
-  clearTimeout(timer);
-  status.innerHTML = "Edited on another device — <button id=theirs>load theirs</button> · <button id=mine>keep mine</button> · <button id=merge>merge</button>";
-  document.getElementById("theirs").onclick = () => {
-    load(theirs);
-    status.textContent = "Loaded theirs";
-  };
-  document.getElementById("mine").onclick = () => {
-    conflict = null;
-    version = theirs.version;
-    save();
-  };
-  document.getElementById("merge").onclick = () => {
-    conflict = null;
-    version = theirs.version;
-    const text = merge(getText(), theirs.body);
-    paint(text, [text.length, text.length]);
-    record(text, [text.length, text.length]);
-    changed(text);
-    status.textContent = "Merged — fix the marked lines";
-  };
+function changed(text) {
+  count(text);
+  saver.changed();
 }
 
 // Git-style conflict markers around the lines that differ (shared leading/trailing lines kept once).
@@ -404,21 +369,7 @@ function merge(mine, theirs) {
   ].join("\n");
 }
 
-// Pick up edits made elsewhere when coming back to this tab.
-function refresh() {
-  if (conflict || inflight || document.hidden) return;
-  fetch("/api/entries/" + DAY).then(r => r.json()).then(j => {
-    if (j.version === version) return;
-    if (getText() === saved) { load(j); status.textContent = "Updated from another device"; }
-    else showConflict(j);
-  }).catch(() => {});
-}
-
-ed.addEventListener("blur", () => save());
-addEventListener("pagehide", () => save(true));
-addEventListener("pageshow", e => { if (e.persisted) refresh(); });
-addEventListener("focus", refresh);
-document.addEventListener("visibilitychange", () => { if (document.hidden) save(true); else refresh(); });
+ed.addEventListener("blur", saver.save);
 
 // Spellcheck toggle (remembered per browser). Re-rendering makes the browser drop or redo its underlines.
 const spellBtn = document.getElementById("spell-btn");
@@ -451,7 +402,7 @@ dlg.querySelector("form").addEventListener("submit", () => {
   const title = inp.value.trim();
   if (!title) return;
   status.textContent = "Adding to inbox…";
-  fetch("/api/inbox", { method: "POST", body: title })
+  fetch("/api/inbox", { method: "POST", body: title, headers: { "X-Requested-With": "fetch" } })
     .then(r => { if (!r.ok) throw new Error(r.status); status.textContent = "Added to inbox"; })
     .catch(() => { status.textContent = "Inbox add failed"; inp.value = title; dlg.showModal(); });
 });
@@ -461,7 +412,6 @@ let spellOn = true;
 try { spellOn = localStorage.spellcheck !== "off"; } catch (e) {}
 setSpell(spellOn);
 paint(BODY);
-changed(BODY);
-clearTimeout(timer);
+count(BODY);
 ed.focus();
 setSel([BODY.length, BODY.length]);

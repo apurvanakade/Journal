@@ -1,18 +1,12 @@
+/* light-dark() follows color-scheme: the system setting, unless the ◐ toggle set data-theme. */
 :root {
-  --bg: #fbfaf7; --fg: #2b2a28; --muted: #8a877f; --faint: #c4c0b7; --line: #e6e3dc;
-  --accent: #2b2a28; --accent-fg: #fbfaf7; --dot: #b0aca2; --mark: #f3e3a6;
+  color-scheme: light dark;
+  --bg: light-dark(#fbfaf7, #1b1b1a); --fg: light-dark(#2b2a28, #e4e1da);
+  --muted: light-dark(#8a877f, #85827b); --faint: light-dark(#c4c0b7, #55534f);
+  --line: light-dark(#e6e3dc, #2f2e2c); --accent: light-dark(#2b2a28, #e4e1da);
+  --accent-fg: light-dark(#fbfaf7, #1b1b1a); --dot: light-dark(#b0aca2, #6d6a64);
+  --mark: light-dark(#f3e3a6, #5a4c1c);
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #1b1b1a; --fg: #e4e1da; --muted: #85827b; --faint: #55534f; --line: #2f2e2c;
-    --accent: #e4e1da; --accent-fg: #1b1b1a; --dot: #6d6a64; --mark: #5a4c1c;
-  }
-}
-:root[data-theme="dark"] {
-    --bg: #1b1b1a; --fg: #e4e1da; --muted: #85827b; --faint: #55534f; --line: #2f2e2c;
-    --accent: #e4e1da; --accent-fg: #1b1b1a; --dot: #6d6a64; --mark: #5a4c1c;
-}
-:root { color-scheme: light dark; }
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -100,7 +94,6 @@ dialog::backdrop { background: rgb(0 0 0 / .2); }
 dialog input {
   width: 100%; border: 0; outline: 0; background: transparent; color: var(--fg); font: inherit; font-size: 17px;
 }
-.muted { color: var(--muted); }
 
 /* Editor: plain Markdown source, styled in place. Markers stay visible but faint. */
 .ed {

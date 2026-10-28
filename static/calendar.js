@@ -4,7 +4,7 @@ const pad = n => String(n).padStart(2, "0");
 let [y, m] = DAY.split("-").map(Number);
 let yearView = false;
 
-function renderCal() {
+export function renderCal() {
   const grid = document.getElementById("grid");
   const title = document.getElementById("month");
   grid.innerHTML = "";

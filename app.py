@@ -1,4 +1,5 @@
 import io
+import json
 import math
 import os
 import re
@@ -8,11 +9,13 @@ import urllib.request
 import zipfile
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Flask, abort, g, redirect, render_template, request, send_file, url_for
-from markupsafe import Markup, escape
+from flask import Flask, Response, abort, g, redirect, render_template, request, send_file, url_for
+from markupsafe import Markup
 
 DB_PATH = os.environ.get("JOURNAL_DB", "dev.db")
 GTD_URL = os.environ.get("GTD_URL", "http://127.0.0.1:5005")
+# Names are only learned from entries on or after this day (older ones taught too many title fragments).
+NAMES_SINCE = os.environ.get("JOURNAL_NAMES_SINCE", "2026-10-26")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS entries (
@@ -29,15 +32,25 @@ CREATE TABLE IF NOT EXISTS drawings (  -- optional scribble box under an entry; 
 # The only drawing markup accepted: it's put back into the page with innerHTML.
 INK = re.compile(r'(<path d="[ML0-9. ]+"></path>)*')
 
-app = Flask(__name__)
+
+def init(path=DB_PATH):
+    """Create the tables if needed and switch to WAL (both persist in the file); once per process."""
+    db = sqlite3.connect(path)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.executescript(SCHEMA)
+    db.close()
 
 
 def connect(path=DB_PATH):
     db = sqlite3.connect(path, timeout=5)
-    db.execute("PRAGMA journal_mode=WAL")
-    db.execute("PRAGMA busy_timeout=5000")
-    db.executescript(SCHEMA)
+    # SQLite's own lower() and LIKE only fold ASCII; search uses Python's, like snippet().
+    db.create_function("pylower", 1, str.lower, deterministic=True)
     return db
+
+
+init()
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024
 
 
 def get_db():
@@ -147,8 +160,9 @@ def snippet(body, terms, width=90):
     start = max(0, i - width // 3)
     text = body[start : start + width].replace("\n", " ")
     text = ("…" if start else "") + text + ("…" if start + width < len(body) else "")
-    pattern = re.compile("|".join(re.escape(t) for t in terms), re.IGNORECASE)
-    return Markup(pattern.sub(lambda m: Markup("<mark>%s</mark>") % m.group(0), str(escape(text))))
+    # Split on the terms before escaping (so a term can't match inside an entity); odd parts are hits.
+    parts = re.split("(" + "|".join(re.escape(t) for t in terms) + ")", text, flags=re.IGNORECASE)
+    return Markup("").join(Markup("<mark>%s</mark>") % p if n % 2 else p for n, p in enumerate(parts))
 
 
 @app.get("/search")
@@ -158,9 +172,8 @@ def search():
     db = get_db()
     results = []
     if terms:
-        like = " AND ".join(["body LIKE ? ESCAPE '\\'"] * len(terms))
-        args = ["%" + re.sub(r"([%_\\])", r"\\\1", t) + "%" for t in terms]
-        rows = db.execute(f"SELECT day, body FROM entries WHERE {like} ORDER BY day DESC", args)
+        where = " AND ".join(["instr(pylower(body), ?)"] * len(terms))
+        rows = db.execute(f"SELECT day, body FROM entries WHERE {where} ORDER BY day DESC", terms)
         results = [(date.fromisoformat(day), snippet(body, terms)) for day, body in rows]
     return render_template(
         "search.html", q=q, results=results, days=all_days(db), today=date.today().isoformat()
@@ -169,8 +182,7 @@ def search():
 
 # Typing assists (desktop): a vocabulary for word completion, and the words you always capitalize
 # mid-sentence (names, places) on at least two days, learned from the entries (names only from
-# NAMES_SINCE on; older entries taught too many title fragments). Cached until any entry changes.
-NAMES_SINCE = "2026-10-26"
+# NAMES_SINCE on). Cached, as JSON, until any entry changes; the browser revalidates by ETag.
 LINE_PREFIX = re.compile(r"^(#{1,6} |\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?|>+ ?)")
 NOISE = re.compile(r"`[^`]*`|\S*://\S*|\]\([^)]*\)|\[\[[^\]]*\]\]")
 TOKEN = re.compile(r"[^\W\d_]+(?:['’][^\W\d_]+)*")
@@ -220,8 +232,11 @@ def words():
     db = get_db()
     key = db.execute("SELECT count(*), max(updated_at) FROM entries").fetchone()
     if _words[0] != key:
-        _words = (key, vocabulary(db))
-    return _words[1]
+        _words = (key, json.dumps(vocabulary(db), ensure_ascii=False))
+    resp = Response(_words[1], mimetype="application/json")
+    resp.set_etag(f"{key[0]}-{key[1]}-{NAMES_SINCE}")
+    resp.cache_control.no_cache = True
+    return resp.make_conditional(request)
 
 
 SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 %d" fill="none" stroke="#2b2a28" '
@@ -249,12 +264,17 @@ def export():
 
 @app.post("/api/inbox")
 def inbox():
+    # A custom header can't be sent cross-site without a CORS preflight, which we never grant,
+    # so other sites can't post here (PUTs are preflighted anyway).
+    if "X-Requested-With" not in request.headers:
+        abort(403)
     title = request.get_data(as_text=True).strip()
     if not title:
         abort(400)
     data = urllib.parse.urlencode({"title": title}).encode()
     try:
-        urllib.request.urlopen(GTD_URL + "/capture", data, timeout=5)
+        with urllib.request.urlopen(GTD_URL + "/capture", data, timeout=5):
+            pass
     except OSError:
         abort(502)
     return "", 204

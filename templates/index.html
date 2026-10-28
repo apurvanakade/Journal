@@ -37,6 +37,6 @@ const VERSION = {{ version | tojson }};
 const INK = {{ ink | tojson }};
 const INK_VERSION = {{ ink_version | tojson }};
 </script>
-<script src="{{ url_for('static', filename='editor.js') }}"></script>
-<script src="{{ url_for('static', filename='ink.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='editor.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='ink.js') }}"></script>
 {% endblock %}
