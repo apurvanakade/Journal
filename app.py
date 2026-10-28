@@ -25,12 +25,40 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 CREATE TABLE IF NOT EXISTS drawings (  -- optional scribble box under an entry; same versioning
     day TEXT PRIMARY KEY,
-    body TEXT NOT NULL,            -- bare SVG <path>s, 700 units wide (see INK, ink_height)
+    body TEXT NOT NULL,            -- bare SVG <path d="M…L…">s, 700 units wide (see INK, ink_height)
     updated_at TEXT NOT NULL
 );
 """
 # The only drawing markup accepted: it's put back into the page with innerHTML.
 INK = re.compile(r'(<path d="[ML0-9. ]+"></path>)*')
+PATH = re.compile(r'<path d="([^"]*)"></path>')
+
+
+def _points(d):
+    """A path's pen points: M and L points, and the control point of each Q (see ink.js)."""
+    return [seg[1:].split()[:2] for seg in re.findall(r"[MQL][^MQL]*", d)]
+
+
+def _num(n):
+    return f"{round(n, 1):g}"
+
+
+def smooth(body):
+    """Stored points to the curves ink.js draws: quadratic Béziers between midpoints."""
+    def curve(m):
+        pts = _points(m.group(1))
+        if len(pts) < 3:
+            return m.group(0)
+        d = "M" + " ".join(pts[0])
+        for a, b in zip(pts[1:-1], pts[2:]):
+            d += "Q%s %s" % (" ".join(a), " ".join(_num((float(x) + float(y)) / 2) for x, y in zip(a, b)))
+        return '<path d="%sL%s"></path>' % (d, " ".join(pts[-1]))
+    return PATH.sub(curve, body)
+
+
+def unsmooth(body):
+    """smooth()'s inverse: curves back to the stored points."""
+    return PATH.sub(lambda m: '<path d="M%s"></path>' % "L".join(" ".join(p) for p in _points(m.group(1))), body)
 
 
 def init(path=DB_PATH):
@@ -240,7 +268,7 @@ def words():
 
 
 SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 %d" fill="none" stroke="#2b2a28" '
-       'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">%s</svg>\n')
+       'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">%s</svg>\n')
 
 
 def ink_height(body):
@@ -256,7 +284,7 @@ def export():
         for day, body in get_db().execute("SELECT day, body FROM entries ORDER BY day"):
             z.writestr(f"journal/{day}.md", body)
         for day, body in get_db().execute("SELECT day, body FROM drawings ORDER BY day"):
-            z.writestr(f"journal/{day}.svg", SVG % (ink_height(body), body))
+            z.writestr(f"journal/{day}.svg", SVG % (ink_height(body), smooth(body)))
     buf.seek(0)
     return send_file(buf, mimetype="application/zip", as_attachment=True,
                      download_name=f"journal-{date.today().isoformat()}.zip")

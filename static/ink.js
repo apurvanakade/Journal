@@ -1,5 +1,6 @@
 // Ink: an optional scribble box under the entry. Pen or mouse draws; fingers scroll the page
-// (palm rejection). Stored as bare SVG <path>s, autosaved and conflict-checked like the text.
+// (palm rejection). Stored as bare SVG <path d="M…L…">s of the pen's points, drawn as smooth
+// curves (show/stored convert); autosaved and conflict-checked like the text.
 // The box is ruled, and grows to keep a few empty lines below the lowest stroke.
 // Expects DAY, DAYS and INK, INK_VERSION from the page.
 import { renderCal } from "./calendar.js";
@@ -27,13 +28,10 @@ function fit() {
   svg.style.setProperty("--rows", rows);
 }
 
-svg.innerHTML = INK;
-fit();
-box.hidden = !INK;
 document.getElementById("ink-btn").onclick = () => { box.hidden = !box.hidden; };
 
-// Whole units: about a CSS pixel at full width, and a third smaller to store than tenths.
-const clamp = (n, max) => Math.round(Math.min(max, Math.max(0, n)));
+// Tenths of a unit: whole units (about a CSS pixel) made small handwriting jagged.
+const clamp = (n, max) => Math.round(Math.min(max, Math.max(0, n)) * 10) / 10;
 function pt(e) {
   const r = svg.getBoundingClientRect();
   return [clamp((e.clientX - r.left) * W / r.width, W), clamp((e.clientY - r.top) * H / r.height, H)];
@@ -54,7 +52,7 @@ function erase([x, y]) {
   }
 }
 
-// Ramer–Douglas–Peucker: drop points within half a unit of the line their neighbours make.
+// Ramer–Douglas–Peucker: drop points within a few tenths of the line their neighbours make.
 function simplify(pts) {
   if (pts.length <= 2) return pts;
   const [ax, ay] = pts[0], [bx, by] = pts.at(-1);
@@ -63,10 +61,30 @@ function simplify(pts) {
     const d = dist(pts[i][0], pts[i][1], ax, ay, bx, by);
     if (d > far) { far = d; at = i; }
   }
-  if (far <= 0.5) return [pts[0], pts.at(-1)];
+  if (far <= 0.3) return [pts[0], pts.at(-1)];
   return [...simplify(pts.slice(0, at + 1)), ...simplify(pts.slice(at)).slice(1)];
 }
-const pathData = pts => "M" + pts.map(p => p.join(" ")).join("L");
+const line = pts => "M" + pts.map(p => p.join(" ")).join("L");
+// A smooth curve: quadratic Béziers between the midpoints of successive points, each bending
+// through (using as its control point) the point between them.
+function pathData(pts) {
+  if (pts.length < 3) return line(pts);
+  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2].map(n => Math.round(n * 10) / 10).join(" ");
+  let d = `M${pts[0].join(" ")}`;
+  for (let i = 1; i < pts.length - 1; i++) d += `Q${pts[i].join(" ")} ${mid(pts[i], pts[i + 1])}`;
+  return d + `L${pts.at(-1).join(" ")}`;
+}
+// The pen points back out of a drawn path: M and L points, and each Q's control point.
+const points = d => d.match(/[MQL][^MQL]*/g).map(s => s.slice(1).trim().split(" ").slice(0, 2).map(Number));
+// The page holds curves; the server holds points (a third the size). app.py mirrors both.
+function show(body) {
+  svg.innerHTML = body;
+  for (const p of svg.querySelectorAll("path")) p.setAttribute("d", pathData(points(p.getAttribute("d"))));
+  fit();
+}
+const stored = () => [...svg.querySelectorAll("path")].map(p => `<path d="${line(points(p.getAttribute("d")))}"></path>`).join("");
+show(INK);
+box.hidden = !INK;
 
 svg.addEventListener("pointerdown", e => {
   if (e.pointerType === "touch" || e.button !== 0 || saver.conflict) return;
@@ -76,8 +94,7 @@ svg.addEventListener("pointerdown", e => {
   const p = pt(e);
   if (tool === "erase") { stroke = "erase"; return erase(p); }
   stroke = { el: document.createElementNS("http://www.w3.org/2000/svg", "path"), pts: [p] };
-  stroke.d = `M${p[0]} ${p[1]}`;
-  stroke.el.setAttribute("d", stroke.d + `L${p[0]} ${p[1]}`);  // a tap leaves a dot
+  stroke.el.setAttribute("d", pathData([p, p]));  // a tap leaves a dot
   svg.append(stroke.el);
 });
 svg.addEventListener("pointermove", e => {
@@ -87,11 +104,10 @@ svg.addEventListener("pointermove", e => {
     const p = pt(c);
     if (stroke === "erase") { erase(p); continue; }
     const [lx, ly] = stroke.pts.at(-1);
-    if (Math.hypot(p[0] - lx, p[1] - ly) < 1) continue;  // finer than we store
+    if (Math.hypot(p[0] - lx, p[1] - ly) < 0.5) continue;  // jitter
     stroke.pts.push(p);
-    stroke.d += `L${p[0]} ${p[1]}`;
   }
-  if (stroke !== "erase") stroke.el.setAttribute("d", stroke.d);
+  if (stroke !== "erase") stroke.el.setAttribute("d", pathData(stroke.pts));
 });
 function end() {
   if (!stroke) return;
@@ -137,10 +153,9 @@ document.getElementById("ink-clear").onclick = () => {
 const saver = autosaver({
   url: "/api/drawings/" + DAY, body: INK, version: INK_VERSION, delay: 1000,
   status: document.getElementById("ink-status"), label: "Drawn on another device",
-  get: () => svg.innerHTML,
+  get: stored,
   set: body => {
-    svg.innerHTML = body;
-    fit();
+    show(body);
     undos = [];
     if (body) box.hidden = false;
   },

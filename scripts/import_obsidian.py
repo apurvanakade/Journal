@@ -16,7 +16,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from app import INK, connect, init  # noqa: E402
+from app import INK, connect, init, unsmooth  # noqa: E402
 
 NAME = re.compile(r"^(\d{4}-\d{2}-\d{2})\.(md|svg)$")
 TEMPLATE_LINE = re.compile(r"^(#+\s*\d{4}-\d{2}-\d{2}|Day of the week:.*|## Journal)\s*$")
@@ -30,7 +30,8 @@ def is_empty_template(text):
 def drawing(text):
     """The bare <path>s of an exported drawing, or None if it isn't one."""
     m = SVG_BODY.search(text)
-    return m.group(1) if m and INK.fullmatch(m.group(1)) else None
+    body = m and unsmooth(m.group(1))
+    return body if body is not None and INK.fullmatch(body) else None
 
 
 def main(src, db_path, stash):
