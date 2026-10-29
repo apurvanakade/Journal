@@ -18,13 +18,15 @@
   <div id="ed" class="ed" contenteditable="plaintext-only" spellcheck="true" data-placeholder="Write…"></div>
   <div id="ink" class="ink" hidden>
     <div class="ink-bar">
-      <button data-tool="pen" class="on">pen</button>
-      <button data-tool="erase">eraser</button>
-      <button id="ink-undo">undo</button>
-      <button id="ink-clear">clear</button>
       <span id="ink-status"></span>
     </div>
-    <svg viewBox="0 0 700 396"></svg>
+    <div class="ink-page">
+      <svg viewBox="0 0 700 396"></svg>
+      <div class="ink-float">
+        <button data-tool="pen" class="on" title="Pen" aria-label="Pen"><svg viewBox="0 0 16 16"><path d="M11 2.5l2.5 2.5L5.5 13H3v-2.5z"/></svg></button>
+        <button data-tool="erase" title="Eraser" aria-label="Eraser"><svg viewBox="0 0 16 16"><path d="M9.5 2.5l4 4L7 13H4.5l-2-2zM6 6l4 4M7 13h7"/></svg></button>
+      </div>
+    </div>
   </div>
   <dialog id="inbox">
     <form method="dialog"><input name="title" placeholder="Add to GTD inbox…" autocomplete="off"></form>

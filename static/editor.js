@@ -337,7 +337,7 @@ const saver = autosaver({
   status, label: "Edited on another device",
   get: getText, set: replace,
   saved: text => {
-    if (text.trim()) DAYS.add(DAY); else if (!document.querySelector("#ink path")) DAYS.delete(DAY);
+    if (text.trim()) DAYS.add(DAY); else if (!document.querySelector(".ink-page > svg path")) DAYS.delete(DAY);
     renderCal();
   },
   merge: theirs => {
