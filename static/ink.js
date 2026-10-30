@@ -26,9 +26,11 @@ function nums(p) {
   return parsed.get(p);
 }
 function size(rows) {
-  H = rows * ROW;
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.style.setProperty("--rows", rows);
+  if (rows * ROW !== H || !svg.hasAttribute("viewBox")) {  // an unchanged viewBox still re-lays out
+    H = rows * ROW;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.style.setProperty("--rows", rows);
+  }
   place(at);
 }
 function fit() {
@@ -83,7 +85,7 @@ function simplify(pts) {
 // perfect-freehand's thresholds are in pixels (it skips the last 3 of a stroke, for one), too coarse
 // for handwriting a few units tall, so it works at SCALE× and the outline is scaled back.
 const SCALE = 4;
-const FREEHAND = { size: 1.8 * SCALE, thinning: 0.6, smoothing: 0.5, streamline: 0.4 };
+const FREEHAND = { size: 2.3 * SCALE, thinning: 0.5, smoothing: 0.5, streamline: 0.4 };
 // Compact path data: an absolute start, then relative steps in tenths (whole tenths, so no rounding
 // drift), without leading zeros or spaces before minus signs: "M25.3 60.2l-.9-2.9-1.3-2.8…Z".
 function svgPath(pts) {
@@ -108,42 +110,53 @@ fit();
 box.hidden = !INK;
 { const last = svg.querySelector("path:last-of-type"); if (last) place(nums(last).at(-1)); }
 
+const status = document.getElementById("ink-status");
 svg.addEventListener("pointerdown", e => {
   // Button 5 is a pen's eraser end (or eraser button), where the hardware has one.
-  if (e.pointerType === "touch" || ![0, 5].includes(e.button) || saver.conflict) return;
+  if (e.pointerType === "touch" || ![0, 5].includes(e.button)) return;
   e.preventDefault();
+  // Drawing waits until a conflict is settled; show where, since the status may be off screen.
+  if (saver.conflict) {
+    status.scrollIntoView({ behavior: "smooth", block: "center" });
+    status.classList.remove("flash"); void status.offsetWidth; status.classList.add("flash");
+    return;
+  }
+  if (stroke) end();  // a stroke whose end never arrived
   svg.setPointerCapture(e.pointerId);
-  const p = pt(e);
-  if (tool === "erase" || e.button === 5) { stroke = "erase"; return erase(p); }
+  const p = pt(e), id = e.pointerId;
+  if (tool === "erase" || e.button === 5) { stroke = { id, erase: true, y: p[1] }; return erase(p); }
   // Mice report a flat 0.5, so their pressure is simulated from speed instead.
   const pen = e.pointerType === "pen";
-  stroke = { el: document.createElementNS("http://www.w3.org/2000/svg", "path"), pts: [[...p, e.pressure]], pen };
+  stroke = { id, el: document.createElementNS("http://www.w3.org/2000/svg", "path"), pts: [[...p, e.pressure]], pen };
   stroke.el.setAttribute("d", outline(stroke, false));  // a tap leaves a dot
   svg.append(stroke.el);
 });
 svg.addEventListener("pointermove", e => {
-  if (!stroke) return;
+  if (stroke?.id !== e.pointerId) return;
   const all = e.getCoalescedEvents?.();
   for (const c of all?.length ? all : [e]) {
     const p = pt(c);
-    if (stroke === "erase") { erase(p); continue; }
+    if (stroke.erase) { stroke.y = p[1]; erase(p); continue; }
     stroke.pts.push([...p, c.pressure]);
     grow(p[1]);
   }
-  if (stroke !== "erase") stroke.el.setAttribute("d", outline(stroke, false));
+  if (!stroke.erase) stroke.el.setAttribute("d", outline(stroke, false));
 });
 function end(e) {
-  if (!stroke) return;
-  if (stroke !== "erase") {
+  if (!stroke || e && e.pointerId !== stroke.id) return;
+  if (!stroke.erase) {
     stroke.el.setAttribute("d", outline(stroke, true));
     place(stroke.pts.at(-1)[1]);
-  } else place(pt(e)[1]);
+  } else place(stroke.y);
   stroke = null;
   fit();
   saver.changed();  // an eraser pass that hit nothing changes nothing, and the save is skipped
 }
 svg.addEventListener("pointerup", end);
 svg.addEventListener("pointercancel", end);
+// Capture can be lost without a pointerup (WebKit does, at times); left open, the stroke would
+// swallow finger scrolling below.
+svg.addEventListener("lostpointercapture", end);
 // iPadOS still sends touch events for the Pencil; unless they're cancelled, Safari may take a stroke
 // over as a scroll, drag-and-drop or text selection and cancel the pointer mid-line. Finger touches
 // are left alone so they scroll the page, unless a stroke is under way (a resting palm).

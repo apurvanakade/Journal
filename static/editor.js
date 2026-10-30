@@ -2,6 +2,7 @@
 // Expects DAY, DAYS and BODY, VERSION from the page.
 import { renderCal } from "./calendar.js";
 import { autosaver } from "./autosave.js";
+import { merge as diff3 } from "./vendor/diff3.js";
 
 // --- Markdown highlighting. Output text must equal the input exactly; we only wrap it. ---
 // Escaped the way the browser serializes text (&nbsp; included), so paint() can compare innerHTML.
@@ -340,9 +341,11 @@ const saver = autosaver({
     if (text.trim()) DAYS.add(DAY); else if (!document.querySelector(".ink-page > svg path")) DAYS.delete(DAY);
     renderCal();
   },
-  merge: theirs => {
-    replace(merge(getText(), theirs));
+  merge: (theirs, base) => {
+    const { conflict, result } = merge(base, getText(), theirs);
+    replace(result);
     saver.changed();
+    return !conflict;
   },
 });
 
@@ -355,18 +358,12 @@ function changed(text) {
   saver.changed();
 }
 
-// Git-style conflict markers around the lines that differ (shared leading/trailing lines kept once).
-function merge(mine, theirs) {
-  const a = mine.split("\n"), b = theirs.split("\n");
-  let p = 0, s = 0;
-  while (p < a.length && p < b.length && a[p] === b[p]) p++;
-  while (s < a.length - p && s < b.length - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
-  return [
-    ...a.slice(0, p),
-    "<<<<<<< mine", ...a.slice(p, a.length - s),
-    "=======", ...b.slice(p, b.length - s),
-    ">>>>>>> theirs", ...a.slice(a.length - s),
-  ].join("\n");
+// Line-wise 3-way merge against the last text both sides shared: edits to different lines are
+// combined; lines both changed get git-style markers.
+function merge(base, mine, theirs) {
+  const lines = s => s.split("\n");
+  const { conflict, result } = diff3(lines(mine), lines(base), lines(theirs), { label: { a: "mine", b: "theirs" } });
+  return { conflict, result: result.join("\n") };
 }
 
 ed.addEventListener("blur", saver.save);

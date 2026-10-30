@@ -1,11 +1,15 @@
 // Versioned autosave, shared by the editor and the drawing box. Saves `delay` ms after the last
 // change, one request at a time (a save asked for mid-flight waits for it, so it's based on the new
-// version, not a stale one); a 409 offers "load theirs" / "keep mine" (and "merge", if given).
+// version, not a stale one); a 409 offers "load theirs" / "keep mine" (and "merge", if given:
+// merge(theirs, base) applies a merge and returns whether it was clean).
 // Pulls in edits made elsewhere when the tab comes back.
 //   url: GET/PUT endpoint; get(): current body; set(body): show a body loaded from the server;
 //   saved(body): after a successful save; conflict(): when a conflict is shown.
 export function autosaver({ url, body, version, delay, status, label, get, set, saved: onSaved, conflict: onConflict, merge }) {
   let saved = body, timer = null, inflight = false, again = false, conflict = null, refreshing = false;
+  // Bodies sent whose answer never came (a dropped connection, a suspended tab): the server may
+  // have saved them anyway, and then its newer version is our own, not a conflict.
+  const unsure = new Set();
 
   function changed() {
     if (conflict) return;
@@ -25,16 +29,19 @@ export function autosaver({ url, body, version, delay, status, label, get, set, 
     // keepalive lets the save outlive the page, but browsers cap all pending keepalive bodies at
     // 64 KB in total; the text and drawing savers get half each.
     const keepalive = new Blob([text]).size < 32000;
-    fetch(url, { method: "PUT", body: text, keepalive, headers: { "X-Base-Version": version } })
+    // A request that hangs (iPad Safari can stall one across a suspend) would block every later save.
+    const signal = AbortSignal.timeout?.(20000);
+    fetch(url, { method: "PUT", body: text, keepalive, signal, headers: { "X-Base-Version": version } })
       .then(async r => {
         if (r.status === 409) return showConflict(await r.json());
         if (!r.ok) throw new Error(r.status);
         ({ version } = await r.json());
         saved = text;
+        unsure.clear();
         status.textContent = "Saved";
         onSaved?.(text);
       })
-      .catch(() => { status.textContent = "Not saved — retrying"; timer = setTimeout(save, 3000); })
+      .catch(() => { unsure.add(text); status.textContent = "Not saved — retrying"; timer = setTimeout(save, 3000); })
       .finally(() => { inflight = false; if (again) { again = false; save(); } });
   }
 
@@ -47,6 +54,12 @@ export function autosaver({ url, body, version, delay, status, label, get, set, 
   }
 
   function showConflict(theirs) {
+    if (unsure.has(theirs.body)) {  // our own lost save: adopt its version and carry on
+      unsure.clear();
+      saved = theirs.body;
+      version = theirs.version;
+      return save();
+    }
     conflict = theirs;
     clearTimeout(timer);
     onConflict?.();
@@ -55,11 +68,11 @@ export function autosaver({ url, body, version, delay, status, label, get, set, 
     const [theirsBtn, mineBtn, mergeBtn] = status.querySelectorAll("button");
     theirsBtn.onclick = () => { load(theirs); status.textContent = "Loaded theirs"; };
     mineBtn.onclick = () => { conflict = null; version = theirs.version; save(); };
+    // `saved` is the body at the version this edit was based on: the merge's common base.
     if (mergeBtn) mergeBtn.onclick = () => {
       conflict = null;
       version = theirs.version;
-      merge(theirs.body);
-      status.textContent = "Merged — fix the marked lines";
+      status.textContent = merge(theirs.body, saved) ? "Merged" : "Merged — fix the marked lines";
     };
   }
 
