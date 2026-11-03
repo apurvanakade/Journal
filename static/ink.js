@@ -172,18 +172,32 @@ for (const b of box.querySelectorAll("[data-tool]")) b.onclick = () => {
   box.classList.toggle("erase", tool === "erase");
 };
 
-// Saved a second after the last stroke, so little is left unsaved if the page goes away.
+// The drawing as the list of its strokes' path data (the stroke under way isn't drawn yet). A save
+// sends only what changed since the last one: the indices of saved strokes since erased, and the
+// strokes drawn since, which are always appended at the end. Resending the whole page (hundreds of
+// KB) after every pause in the writing froze the iPad.
+const strokes = {
+  parse: body => Array.from(body.matchAll(/ d="([^"]*)"/g), m => m[1]),
+  same: (a, b) => a.length === b.length && a.every((d, i) => d === b[i]),
+  request(saved, now) {
+    const remove = [];
+    let j = 0;
+    saved.forEach((d, i) => { if (d === now[j]) j++; else remove.push(i); });
+    return { method: "PATCH", body: JSON.stringify({ remove, add: now.slice(j) }) };
+  },
+};
+// Saved 5 seconds after the last stroke, or when the tab is hidden or closed.
 const saver = autosaver({
-  url: "/api/drawings/" + DAY, body: INK, version: INK_VERSION, delay: 1000,
+  url: "/api/drawings/" + DAY, body: INK, version: INK_VERSION, delay: 5000, codec: strokes,
   status: document.getElementById("ink-status"), label: "Drawn on another device",
-  get: () => svg.innerHTML,
+  get: () => Array.from(svg.children).filter(p => p !== stroke?.el).map(p => p.getAttribute("d")),
   set: body => {
     svg.innerHTML = body;
     fit();
     if (body) box.hidden = false;
   },
-  saved: body => {
-    if (body || getText().trim()) DAYS.add(DAY); else DAYS.delete(DAY);
+  saved: value => {
+    if (value.length || getText().trim()) DAYS.add(DAY); else DAYS.delete(DAY);
     renderCal();
   },
   conflict: () => { box.hidden = false; },

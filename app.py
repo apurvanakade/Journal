@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS drawings (  -- optional scribble box under an entry; 
 """
 # The only drawing markup accepted: it's put back into the page with innerHTML. Each path is a
 # stroke's filled outline: an absolute start, then relative steps (see svgPath in ink.js).
-INK = re.compile(r'(<path d="M[-0-9. ]+(l[-0-9. ]+)?Z"></path>)*')
+STROKE = re.compile(r"M[-0-9. ]+(l[-0-9. ]+)?Z")
+INK = re.compile(rf'(<path d="{STROKE.pattern}"></path>)*')
+PATH = re.compile(r'<path d="[^"]*"></path>')
 
 
 def init(path=DB_PATH):
@@ -132,27 +134,54 @@ def load(table, day):
     return {"body": body, "version": version}
 
 
-@app.put("/api/<any(entries, drawings):table>/<day>")
-def save(table, day):
-    d = parse_day(day).isoformat()
-    body = request.get_data(as_text=True)
-    if table == "drawings" and not INK.fullmatch(body):
-        abort(400)
-    base = request.headers.get("X-Base-Version")  # version the client last saw; absent = no check
+def versioned(table, day, change):
+    """Save change(old body, current) inside one transaction, where current says whether the client's
+    X-Base-Version (absent = no check) is the stored version; change returns the new body, or None
+    for a conflict, answered with a 409 and the server's body for the client to resolve."""
+    base = request.headers.get("X-Base-Version")
     db = get_db()
     db.execute("BEGIN IMMEDIATE")
     try:
-        old, version = fetch(db, table, d)
-        if base is not None and base != version and body != old:
+        old, version = fetch(db, table, day)
+        body = change(old, base is None or base == version)
+        if body is None:
             db.rollback()
             return {"body": old, "version": version}, 409  # someone else saved first; the client asks
         if body != old:
-            version = write(db, table, d, body)
+            version = write(db, table, day, body)
         db.commit()
     except BaseException:
         db.rollback()
         raise
     return {"version": version}
+
+
+@app.put("/api/entries/<day>")
+def save(day):
+    body = request.get_data(as_text=True)
+    # A body identical to the stored one (a duplicate save) needs no check.
+    return versioned("entries", parse_day(day).isoformat(), lambda old, current: body if current or body == old else None)
+
+
+@app.patch("/api/drawings/<day>")
+def save_drawing(day):
+    """A drawing's change since the client's version: {"remove": [indices of its strokes], "add": [path data]}."""
+    change = request.get_json(silent=True)
+    remove, add = (change or {}).get("remove"), (change or {}).get("add")
+    if not (isinstance(remove, list) and all(type(i) is int for i in remove)
+            and isinstance(add, list) and all(isinstance(d, str) and STROKE.fullmatch(d) for d in add)):
+        abort(400)
+
+    def apply(old, current):
+        if not current:
+            return None  # the indices are into the client's version
+        paths = PATH.findall(old)
+        if any(not 0 <= i < len(paths) for i in remove):
+            abort(400)
+        gone = set(remove)
+        return "".join([p for i, p in enumerate(paths) if i not in gone] + [f'<path d="{d}"></path>' for d in add])
+
+    return versioned("drawings", parse_day(day).isoformat(), apply)
 
 
 def snippet(body, terms, width=90):
