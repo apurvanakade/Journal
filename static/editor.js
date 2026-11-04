@@ -385,15 +385,22 @@ spellBtn.onclick = () => {
   ed.focus();
 };
 
-// GTD inbox capture: ⌘I (Mac) / Ctrl+I (Linux, Windows) or the + button
+// GTD inbox capture: ⌘/ (Mac) / Ctrl+/ (Linux, Windows) or the + button.
+// The box starts with the selected text, as displayed (hidden Markdown markers left out), on one line.
 const dlg = document.getElementById("inbox");
 const inp = dlg.querySelector("input");
-function openInbox() { inp.value = ""; dlg.showModal(); }
+let inboxSel = null;
+function openInbox() {
+  if (dlg.open) return;
+  inboxSel = getSel();
+  inp.value = getSelection().toString().replace(/\s+/g, " ").trim();
+  dlg.showModal();
+}
 const btn = document.getElementById("inbox-btn");
-btn.title += /Mac|iPhone|iPad/.test(navigator.platform) ? " (⌘I)" : " (Ctrl+I)";
+btn.title += /Mac|iPhone|iPad/.test(navigator.platform) ? " (⌘/)" : " (Ctrl+/)";
 btn.onclick = openInbox;
 document.addEventListener("keydown", e => {
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") { e.preventDefault(); openInbox(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === "/") { e.preventDefault(); openInbox(); }
 });
 dlg.querySelector("form").addEventListener("submit", () => {
   const title = inp.value.trim();
@@ -403,7 +410,7 @@ dlg.querySelector("form").addEventListener("submit", () => {
     .then(r => { if (!r.ok) throw new Error(r.status); status.textContent = "Added to inbox"; })
     .catch(() => { status.textContent = "Inbox add failed"; inp.value = title; dlg.showModal(); });
 });
-dlg.addEventListener("close", () => ed.focus());
+dlg.addEventListener("close", () => { ed.focus(); if (inboxSel) setSel(inboxSel); });
 
 let spellOn = true;
 try { spellOn = localStorage.spellcheck !== "off"; } catch (e) {}

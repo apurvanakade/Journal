@@ -9,9 +9,9 @@ A minimalist journal: one Markdown entry per day. `/` opens today's entry; the c
 - **Theme**: follows the system light/dark setting; the ◐ button next to search overrides it (remembered per browser).
 - **Search** (`/search?q=`, all words must match, case-insensitive including accented letters), **Export** (`/export.zip`, one `YYYY-MM-DD.md` per day plus `YYYY-MM-DD.svg` for drawings; the importer reads both back).
 - **Timestamps:** in the editor, Alt+T (Option+T on Mac) inserts `**09:05 am.** `; Alt+Shift+T inserts a `## 09:05 am.` heading on its own line.
-- **Keys** (outside the editor; Esc leaves it): ←/→ previous/next day, `t` today, `/` search. ⌘D (Mac) / Ctrl+D (Linux, Windows) goes to today from anywhere, including the editor.
+- **Keys** (outside the editor; Esc leaves it): ←/→ previous/next day, `t` today, `/` search. ⌘D (Mac) / Ctrl+D (Linux, Windows) goes to today from anywhere, including the editor. `t` and ⌘D use your device's clock, so they work on a page left open past midnight.
 
-⌘I (Mac) / Ctrl+I (Linux, Windows) (or the `+` by the date) opens a one-line box that posts a task to `GTD_URL` + `/capture` (default `http://127.0.0.1:5005`). This is optional — point it at any endpoint that accepts a `title` form field (e.g. your own task inbox), or leave it as-is with nothing listening there and the button will just fail with a 502.
+⌘/ (Mac) / Ctrl+/ (Linux, Windows) (or the `+` by the date) opens a one-line box, filled with the selected text if any, that posts a task to `GTD_URL` + `/capture` (default `http://127.0.0.1:5005`). This is optional — point it at any endpoint that accepts a `title` form field (e.g. your own task inbox), or leave it as-is with nothing listening there and the button will just fail with a 502.
 
 Flask + SQLite (`entries(day, body, updated_at)`, `drawings(day, body, updated_at)`) — a single process, no external services or cloud platform required. Config: [deploy/journal.env.example](deploy/journal.env.example).
 

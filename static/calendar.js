@@ -51,13 +51,20 @@ document.getElementById("next").onclick = () => {
 document.getElementById("month").onclick = () => { yearView = !yearView; renderCal(); };
 renderCal();
 
+// Today by the system clock at the moment of the keypress, not TODAY, which is stale on a page
+// left open past midnight.
+function goToday() {
+  const d = new Date();
+  location.href = `/${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 // Shortcuts when not typing: ←/→ previous/next day, t today, / search.
 document.addEventListener("keydown", e => {
   if (e.target.closest("input, [contenteditable]") || e.metaKey || e.ctrlKey || e.altKey) return;
   const go = id => { const a = document.getElementById(id); if (a) location.href = a.href; };
   if (e.key === "ArrowLeft") go("prev-day");
   else if (e.key === "ArrowRight") go("next-day");
-  else if (e.key === "t") location.href = "/";
+  else if (e.key === "t") goToday();
   else if (e.key === "/") { e.preventDefault(); document.getElementById("q").focus(); }
 });
 
@@ -66,6 +73,6 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 document.addEventListener("keydown", e => {
   if ((isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "d") {
     e.preventDefault();
-    location.href = "/";
+    goToday();
   }
 });
