@@ -152,8 +152,15 @@ function replace(text) {
   count(text);
 }
 
+// iPad smart punctuation turns a typed "---" into "—-"; put the rule back, so the text stays real Markdown.
+function unsmartRule(text, sel) {
+  const a = sel?.[0];
+  if (!sel || a !== sel[1] || text.slice(a - 2, a) !== "—-") return null;
+  if ((a > 2 && text[a - 3] !== "\n") || (a < text.length && text[a] !== "\n")) return null;
+  return plain(text.slice(0, a)) ? [text.slice(0, a - 2) + "---" + text.slice(a), [a + 1, a + 1]] : null;
+}
 function edited() {
-  const text = getText(), sel = getSel();
+  const [text, sel] = unsmartRule(getText(), getSel()) ?? [getText(), getSel()];
   paint(text, sel);
   record(text, sel);
   changed(text);

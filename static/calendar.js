@@ -68,10 +68,9 @@ document.addEventListener("keydown", e => {
   else if (e.key === "/") { e.preventDefault(); document.getElementById("q").focus(); }
 });
 
-// ⌘D (Mac) / Ctrl+D (Linux, Windows): today, even while typing
-const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+// Alt/Option+D: today, even while typing. By code, not key, since Option+D types "∂" on a Mac.
 document.addEventListener("keydown", e => {
-  if ((isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "d") {
+  if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.code === "KeyD") {
     e.preventDefault();
     goToday();
   }
