@@ -30,10 +30,11 @@ button { font: inherit; color: inherit; }
 }
 .search input:focus { border-color: var(--muted); }
 .theme-toggle {
-  flex: none; background: none; border: 0; color: var(--muted); font-size: 16px; line-height: 1;
-  padding: 6px 8px; border-radius: 4px; cursor: pointer;
+  flex: none; background: none; border: 0; color: var(--muted); font-size: 18px; line-height: 1;
+  padding: 2px 6px; border-radius: 4px; cursor: pointer;
 }
-.theme-toggle:hover { color: var(--fg); background: var(--line); }
+.theme-toggle:hover, .meta .theme-toggle:hover { color: var(--fg); background: var(--line); }
+.meta .theme-toggle { color: var(--muted); text-decoration: none; padding: 2px 6px; }
 
 .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .cal-head button {
@@ -72,7 +73,7 @@ h1 { font-size: 22px; font-weight: 600; margin: 0; }
   color: var(--muted); text-decoration: none; font-size: 20px; padding: 0 6px; border-radius: 4px;
 }
 .day-nav a:hover { color: var(--fg); background: var(--line); }
-.meta { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
+.meta { display: flex; align-items: baseline; gap: 12px; font-size: 12px; color: var(--muted); }
 .meta button {
   background: none; border: 0; padding: 0; color: var(--fg); text-decoration: underline; cursor: pointer;
 }
