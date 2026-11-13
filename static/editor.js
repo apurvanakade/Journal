@@ -46,12 +46,13 @@ function inline(s) {
 }
 
 const ITEM = /^(\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?)(.*)/;
+const RULE = /^ {0,3}([-*_])( ?\1){2,}\s*$/;  // a horizontal rule: ---, - - -, ***
 
 function lineHtml(line) {
   let m;
   if ((m = line.match(/^(#{1,6} )(.*)/))) return `<span class="fmt h h${m[1].length - 1}">${mk(m[1], 1)}${inline(m[2])}</span>`;
   // Rule: a full-width line; the marker text stays in place (transparent) so the caret can land on it.
-  if (/^ {0,3}([-*_])( ?\1){2,}\s*$/.test(line)) return `<span class="fmt hr">${mk(line)}</span>`;
+  if (RULE.test(line)) return `<span class="fmt hr">${mk(line)}</span>`;
   if ((m = line.match(ITEM))) return mk(m[1]) + inline(m[2]);
   if ((m = line.match(/^(>+ ?)(.*)/))) return `<span class="quote">${mk(m[1])}${inline(m[2])}</span>`;
   return inline(line);
@@ -198,8 +199,8 @@ function sentenceStart(before) {
     /(?<!\b(?:e\.g|i\.e|vs|cf|etc|[ap]\.m)|\.\.)[.!?]["'”’)\]*_]*\s+["'“‘(*_]*$/.test(line);
 }
 
-// Called for each typed character; returns true if it inserted c itself.
-function assistType(c) {
+// Called for each typed character; returns true if it inserted c (then `after`) itself.
+function assistType(c, after = "") {
   const last = fix;
   fix = null;
   if (!assist || composing || !c) return false;
@@ -225,9 +226,20 @@ function assistType(c) {
     if (proper[base]) to = proper[base] + s;
   }
   if (!to) return false;
-  insert(to + c, w.length);
+  insert(to + c + after, w.length);
   fix = { at: a - w.length, from: w, to, caret: a + 1 };
   return true;
+}
+// Enter in a list continues it (a new checklist item starts unticked); Enter on an empty item ends the list. A
+// rule (- - -) isn't a list. Shift+Enter is a plain newline. Same as GTD's notes.js.
+function newline() {
+  const t = getText(), [a, b] = getSel() ?? [t.length, t.length];
+  const start = t.lastIndexOf("\n", a - 1) + 1, line = t.slice(start, a);
+  const m = a === b && !RULE.test(line) && line.match(/^(\s*)(?:([-*+])|(\d+)([.)])) (\[[ xX]\](?: |$))?/);
+  if (m && line.length === m[0].length && (t[a] ?? "\n") === "\n")  // nothing after the prefix: the list ends here
+    return apply(t.slice(0, start) + t.slice(a), start);
+  const next = !m ? "" : m[1] + (m[2] ?? `${+m[3] + 1}${m[4]}`) + " " + (m[5] ? "[ ] " : "");
+  if (!assistType("\n", next)) insert("\n" + next);
 }
 // Backspace straight after a fix: a capitalized word goes back to how you typed it;
 // a capitalized sentence start is deleted as usual, and retyping it lowercase sticks.
@@ -295,7 +307,8 @@ ed.addEventListener("beforeinput", e => {
   const t = e.inputType, last = fix;
   if (t !== "insertText") fix = null;
   if (t === "historyUndo" || t === "historyRedo") { e.preventDefault(); step(t === "historyUndo" ? -1 : 1); }
-  else if (t === "insertParagraph" || t === "insertLineBreak") { e.preventDefault(); if (!assistType("\n")) insert("\n"); fix = null; }
+  else if (t === "insertParagraph") { e.preventDefault(); newline(); fix = null; }
+  else if (t === "insertLineBreak") { e.preventDefault(); if (!assistType("\n")) insert("\n"); fix = null; }
   else if (t === "deleteContentBackward") { if (revert(last)) e.preventDefault(); }
   else if (t === "insertText" && assistType(e.data)) { e.preventDefault(); suggest(); }
 });
