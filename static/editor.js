@@ -322,6 +322,15 @@ ed.addEventListener("keydown", e => {
     unhint();
     insert(s);
   }
+  // Enter continues a list, Shift+Enter is a plain newline. Matched here, not in beforeinput, because a
+  // plaintext-only editor reports both as insertLineBreak.
+  else if (e.key === "Enter" && !e.isComposing && !composing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    unhint();
+    if (e.shiftKey) { if (!assistType("\n")) insert("\n"); }
+    else newline();
+    fix = null;
+  }
   else if (e.key === "Escape") { if (hint) unhint(); else ed.blur(); }
   // Alt/Option+T: "**09:05 am.** "; with Shift, a "## 09:05 am." heading on its own line.
   // By code, not key, since Option+T types "†" on a Mac.
