@@ -9,10 +9,9 @@ Minimalist one-entry-per-day journal: Flask + SQLite, no build step, no JS frame
 ```bash
 uv run flask --app app run --debug        # dev server, uses ./dev.db (override with JOURNAL_DB)
 uv run python scripts/import_obsidian.py ../Obsidian/Journal dev.db unmigrated   # Obsidian import
-git push home main                        # deploy
 ```
 
-Production runs under gunicorn on the `home` server (port 5006, single worker + threads); config in [deploy/journal.env.example](deploy/journal.env.example). `TZ` matters: "today" and displayed times use server-local time, while stored timestamps are UTC.
+Production runs under gunicorn (single worker + threads); config in [deploy/journal.env.example](deploy/journal.env.example). `TZ` matters: "today" and displayed times use server-local time, while stored timestamps are UTC.
 
 ## Architecture
 
