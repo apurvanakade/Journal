@@ -167,14 +167,116 @@ function edited() {
   changed(text);
 }
 function apply(text, caret) {
-  paint(text, [caret, caret]);
-  record(text, [caret, caret]);
+  const sel = Array.isArray(caret) ? caret : [caret, caret];
+  paint(text, sel);
+  record(text, sel);
   changed(text);
 }
 // Insert s at the selection, also replacing the `back` characters before it.
 function insert(s, back = 0) {
   const t = getText(), [a, b] = getSel() ?? [t.length, t.length];
   apply(t.slice(0, a - back) + s + t.slice(b), a - back + s.length);
+}
+
+// --- Pasted rich text (a web page, Google Docs, Word) as Markdown ---
+// Only HTML with something Markdown can carry is converted; anything else (a code editor's colored spans)
+// pastes as its plain text, whitespace and all. Copied from GTD's notes.js; keep in sync.
+const RICH = "b,strong,i,em,s,del,strike,a[href],h1,h2,h3,h4,h5,h6,ul,ol,blockquote,pre,code,hr,table," +
+             "[style*=font-weight],[style*=font-style],[style*=line-through]";
+const BLOCK = new Set(["P", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "MAIN", "ASIDE", "NAV", "FIGURE",
+                       "FIGCAPTION", "DL", "DT", "DD", "TABLE", "THEAD", "TBODY", "TR", "ADDRESS", "DETAILS", "SUMMARY"]);
+const SKIP = new Set(["SCRIPT", "STYLE", "HEAD", "TITLE", "META", "LINK", "TEMPLATE", "NOSCRIPT", "IMG", "SVG", "BUTTON"]);
+const SAFE = /^([a-z][\w+.-]*:\/\/|mailto:)/i;  // what the renderer links (a pasted page's relative links mean nothing here)
+
+// Marks hug their text (`**a** `, not `**a **`), or the renderer wouldn't read them.
+const wrap = (s, a, b = a) => { const m = s.match(/^(\s*)([\s\S]*?)(\s*)$/); return m[2] ? m[1] + a + m[2] + b + m[3] : s; };
+const KEYS = ["href", "bold", "italic", "strike", "code"];
+// A line's text runs (each with its style) as Markdown: neighbours sharing a style share one mark.
+function runs(segs, k = 0) {
+  if (k === KEYS.length) return segs.map(s => s.text).join("");
+  let out = "";
+  for (let i = 0; i < segs.length; ) {
+    let j = i;
+    while (j < segs.length && segs[j][KEYS[k]] === segs[i][KEYS[k]]) j++;
+    const group = segs.slice(i, j), v = group[0][KEYS[k]];
+    if (!v) out += runs(group, k + 1);
+    else if (KEYS[k] === "href") {
+      const text = group.map(s => s.text).join("").replace(/[[\]]/g, "").trim();
+      const url = v.replace(/[\s()]/g, c => encodeURIComponent(c));
+      out += !text || text === v ? (/^[a-z][\w+.-]*:\/\//i.test(v) ? url : `[${v}](${url})`) : wrap(text, "[", `](${url})`);
+    }
+    else if (KEYS[k] === "code") {
+      const text = group.map(s => s.text).join(""), ticks = text.includes("`") ? "``" : "`";
+      out += wrap(text, ticks);
+    }
+    else out += wrap(runs(group, k + 1), {bold: "**", italic: "_", strike: "~~"}[KEYS[k]]);
+    i = j;
+  }
+  return out;
+}
+
+function htmlToMarkdown(html) {
+  const body = new DOMParser().parseFromString(html, "text/html").body;  // inert: nothing runs or loads
+  if (!body.querySelector(RICH)) return null;
+  const lines = [];
+  let ctx = {quote: 0, lists: []}, lead = "", segs = [];
+  const indent = () => "> ".repeat(ctx.quote) + "  ".repeat(ctx.lists.length);
+  // A block's line is done: kept if it has any text; the next one starts at the current depth.
+  function flush() {
+    const text = runs(segs).trimEnd();
+    if (text.trim()) lines.push(lead + (segs[0]?.pre ? text : text.trimStart()));
+    if (text.trim() || !lead.trim()) { lead = indent(); segs = []; }  // a list item's marker waits for its text
+  }
+  function text(s, st) {
+    if (!st.pre) {
+      s = s.replace(/\s+/g, " ");
+      const before = segs.length ? segs[segs.length - 1].text : " ";
+      if (before.endsWith(" ")) s = s.replace(/^ /, "");
+    }
+    if (s) segs.push({...st, text: s});
+  }
+  function walk(node, st) {
+    if (node.nodeType === Node.TEXT_NODE) return text(node.data, st);
+    if (node.nodeType !== Node.ELEMENT_NODE || SKIP.has(node.tagName)) return;
+    const tag = node.tagName, css = node.style;
+    st = {...st};
+    const w = css.fontWeight;
+    if (/^(B|STRONG)$/.test(tag) || w === "bold" || +w >= 600) st.bold = true;
+    if (w === "normal" || (+w && +w < 600)) st.bold = false;
+    if (/^(I|EM)$/.test(tag) || css.fontStyle === "italic") st.italic = true;
+    if (css.fontStyle === "normal") st.italic = false;
+    if (/^(S|DEL|STRIKE)$/.test(tag) || css.textDecoration.includes("line-through")) st.strike = true;
+    if (/^(CODE|KBD|SAMP|TT)$/.test(tag)) st.code = true;
+    if (/^pre/.test(css.whiteSpace)) st.pre = true;
+    if (tag === "A") { const h = node.getAttribute("href") ?? ""; st.href = SAFE.test(h) ? h : null; }
+    const kids = () => node.childNodes.forEach(n => walk(n, st));
+    const nest = (change, f) => { const old = ctx; ctx = {...ctx, ...change}; flush(); f(); flush(); ctx = old; lead = indent(); };
+    if (tag === "BR") flush();
+    else if (tag === "HR") { flush(); lines.push(indent() + "---"); }
+    else if (/^H[1-6]$/.test(tag)) { flush(); lead = indent() + "#".repeat(+tag[1]) + " "; kids(); flush(); }
+    else if (tag === "PRE") {
+      flush();
+      lines.push(indent() + "```", ...node.textContent.replace(/\n$/, "").split("\n").map(l => indent() + l), indent() + "```");
+    }
+    else if (tag === "BLOCKQUOTE") nest({quote: ctx.quote + 1}, kids);
+    else if (tag === "UL" || tag === "OL")
+      nest({lists: [...ctx.lists, {ordered: tag === "OL", n: +(node.getAttribute("start") ?? 1)}]}, kids);
+    else if (tag === "LI") {
+      flush();
+      const list = ctx.lists[ctx.lists.length - 1] ?? {ordered: false, n: 1};
+      const box = node.querySelector(":scope > input[type=checkbox], :scope > p > input[type=checkbox]");
+      lead = "> ".repeat(ctx.quote) + "  ".repeat(Math.max(ctx.lists.length - 1, 0)) +
+             (list.ordered ? `${list.n++}. ` : "- ") + (box ? `[${box.checked ? "x" : " "}] ` : "");
+      kids();
+      flush();
+    }
+    else if (tag === "TD" || tag === "TH") { if (node.previousElementSibling) text(" | ", {}); kids(); }
+    else if (BLOCK.has(tag)) { flush(); kids(); flush(); }
+    else kids();
+  }
+  walk(body, {});
+  flush();
+  return lines.join("\n");
 }
 
 // --- Typing assists: sentence capitals, "i" → "I", names you capitalize, word completion (Tab). ---
@@ -240,6 +342,16 @@ function newline() {
     return apply(t.slice(0, start) + t.slice(a), start);
   const next = !m ? "" : m[1] + (m[2] ?? `${+m[3] + 1}${m[4]}`) + " " + (m[5] ? "[ ] " : "");
   if (!assistType("\n", next)) insert("\n" + next);
+}
+// ⌘B / ⌘I: wrap the selection in ** or _, or unwrap it. Same as GTD's notes.js.
+function wrapWith(mark) {
+  const t = getText(), [a, b] = getSel() ?? [t.length, t.length], n = mark.length, ch = mark[0];
+  let left = 0, right = 0;
+  while (t[a - left - 1] === ch) left++;
+  while (t[b + right] === ch) right++;
+  if (left === right && (left === n || left === 3))
+    return apply(t.slice(0, a - n) + t.slice(a, b) + t.slice(b + n), [a - n, b - n]);
+  apply(t.slice(0, a) + mark + t.slice(a, b) + mark + t.slice(b), [a + n, b + n]);
 }
 // Backspace straight after a fix: a capitalized word goes back to how you typed it;
 // a capitalized sentence start is deleted as usual, and retyping it lowercase sticks.
@@ -311,25 +423,37 @@ ed.addEventListener("beforeinput", e => {
   else if (t === "insertLineBreak") { e.preventDefault(); if (!assistType("\n")) insert("\n"); fix = null; }
   else if (t === "deleteContentBackward") { if (revert(last)) e.preventDefault(); }
   else if (t === "insertText" && assistType(e.data)) { e.preventDefault(); suggest(); }
+  else if (t === "insertFromPaste" || t === "insertFromDrop") {
+    // Rich text comes in as Markdown (the editor holds only text); plain text as it is.
+    e.preventDefault();
+    const dt = e.dataTransfer, html = dt?.getData("text/html");
+    insert((html && htmlToMarkdown(html)) ?? (dt?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n"));
+  }
+});
+// Copying or cutting gives the Markdown itself, not the rendered HTML (which pasted back would double its marks).
+function copy(e) {
+  const sel = getSel();
+  if (!sel || sel[0] === sel[1]) return;
+  e.preventDefault();
+  e.clipboardData.setData("text/plain", getText().slice(...sel));
+  if (e.type === "cut") { const t = getText(); apply(t.slice(0, sel[0]) + t.slice(sel[1]), sel[0]); }
+}
+ed.addEventListener("copy", copy);
+ed.addEventListener("cut", copy);
+ed.addEventListener("dragstart", e => {
+  const sel = getSel();
+  if (sel) { e.dataTransfer.clearData(); e.dataTransfer.setData("text/plain", getText().slice(...sel)); }
 });
 ed.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if ((e.metaKey || e.ctrlKey) && k === "z") { e.preventDefault(); step(e.shiftKey ? 1 : -1); }
   else if (e.ctrlKey && k === "y") { e.preventDefault(); step(1); }
+  else if ((e.metaKey || e.ctrlKey) && (k === "b" || k === "i")) { e.preventDefault(); unhint(); wrapWith(k === "b" ? "**" : "_"); }
   else if (e.key === "Tab" && hint && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
     e.preventDefault();
     const s = hint;
     unhint();
     insert(s);
-  }
-  // Enter continues a list, Shift+Enter is a plain newline. Matched here, not in beforeinput, because a
-  // plaintext-only editor reports both as insertLineBreak.
-  else if (e.key === "Enter" && !e.isComposing && !composing && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    e.preventDefault();
-    unhint();
-    if (e.shiftKey) { if (!assistType("\n")) insert("\n"); }
-    else newline();
-    fix = null;
   }
   else if (e.key === "Escape") { if (hint) unhint(); else ed.blur(); }
   // Alt/Option+T: "**09:05 am.** "; with Shift, a "## 09:05 am." heading on its own line.
