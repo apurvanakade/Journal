@@ -572,3 +572,5 @@ paint(BODY);
 count(BODY);
 ed.focus();
 setSel([BODY.length, BODY.length]);
+// Unsaved changes a previous visit left behind (see autosave.js), now the page shows the saved text.
+saver.restore();
