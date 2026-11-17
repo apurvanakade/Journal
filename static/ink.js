@@ -7,7 +7,7 @@
 // Expects DAY, DAYS and INK, INK_VERSION from the page.
 import { getStroke } from "./vendor/perfect-freehand.js";
 import { renderCal } from "./calendar.js";
-import { autosaver } from "./autosave.js";
+import { autosaver, hash } from "./autosave.js";
 import { getText } from "./editor.js";
 
 const box = document.getElementById("ink");
@@ -176,15 +176,38 @@ for (const b of box.querySelectorAll("[data-tool]")) b.onclick = () => {
 // sends only what changed since the last one: the indices of saved strokes since erased, and the
 // strokes drawn since, which are always appended at the end. Resending the whole page (hundreds of
 // KB) after every pause in the writing froze the iPad.
+// The local backup of unsaved strokes (a page can be several MB, too much for localStorage) is the
+// same change, with the erased strokes by hash rather than index, so it can be replayed onto
+// whatever the server has by then: erased strokes are removed if still there, and drawn ones are
+// appended unless already there (a save that got through without its answer).
+// Restored strokes go back in with innerHTML, so like the server it only takes ones matching STROKE.
+const STROKE = /^M[-0-9. ]+(l[-0-9. ]+)?Z$/;
+function diff(saved, now) {
+  const remove = [];
+  let j = 0;
+  saved.forEach((d, i) => { if (d === now[j]) j++; else remove.push(i); });
+  return { remove, add: now.slice(j) };
+}
 const strokes = {
   parse: body => Array.from(body.matchAll(/ d="([^"]*)"/g), m => m[1]),
+  format: value => value.map(d => `<path d="${d}"></path>`).join(""),
   same: (a, b) => a.length === b.length && a.every((d, i) => d === b[i]),
-  request(saved, now) {
-    const remove = [];
-    let j = 0;
-    saved.forEach((d, i) => { if (d === now[j]) j++; else remove.push(i); });
-    // A string body goes out as text/plain unless typed, and the server's get_json() refuses that.
-    return { method: "PATCH", body: JSON.stringify({ remove, add: now.slice(j) }), type: "application/json" };
+  // A string body goes out as text/plain unless typed, and the server's get_json() refuses that.
+  request: (saved, now) => ({ method: "PATCH", body: JSON.stringify(diff(saved, now)), type: "application/json" }),
+  pack(saved, now) {
+    const { remove, add } = diff(saved, now);
+    return { erased: remove.map(i => hash(saved[i])), add };
+  },
+  unpack({ erased, add }, onto) {
+    const gone = new Map();
+    for (const h of erased) gone.set(h, (gone.get(h) ?? 0) + 1);
+    const kept = !gone.size ? onto : onto.filter(d => {
+      const h = hash(d), n = gone.get(h);
+      if (n) gone.set(h, n - 1);
+      return !n;
+    });
+    const have = new Set(kept);
+    return kept.concat(add.filter(d => typeof d === "string" && STROKE.test(d) && !have.has(d)));
   },
 };
 // Saved 5 seconds after the last stroke, or when the tab is hidden or closed.
@@ -203,3 +226,4 @@ const saver = autosaver({
   },
   conflict: () => { box.hidden = false; },
 });
+saver.restore();
