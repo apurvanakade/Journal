@@ -110,7 +110,7 @@ function paint(text, sel) {
   ed.innerHTML = html;
   // Markers first, then the caret: a caret placed in a still-hidden marker (just after a typed closing _)
   // would be moved by the browser to the nearest visible spot, before the marker.
-  reveal(sel);
+  reveal(sel ?? undefined);
   if (sel) setSel(sel);
 }
 
