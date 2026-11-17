@@ -502,9 +502,20 @@ const saver = autosaver({
   },
 });
 
+// Typed words, plus ink.js's rough count of handwritten ones (inkWords), shown as "n + m words".
+let typed = 0, inked = 0;
+function showCount() {
+  const total = typed + inked;
+  wordsEl.textContent = !total ? "" : (inked ? `${typed} + ${inked}` : typed) + ` word${total === 1 ? "" : "s"}`;
+  wordsEl.title = inked ? "typed + handwritten (estimated)" : "";
+}
 function count(text) {
-  const n = text.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
-  wordsEl.textContent = n ? `${n} word${n === 1 ? "" : "s"}` : "";
+  typed = text.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
+  showCount();
+}
+export function inkWords(m) {
+  inked = m;
+  showCount();
 }
 function changed(text) {
   count(text);

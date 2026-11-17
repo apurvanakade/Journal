@@ -8,7 +8,7 @@
 import { getStroke } from "./vendor/perfect-freehand.js";
 import { renderCal } from "./calendar.js";
 import { autosaver, hash } from "./autosave.js";
-import { getText } from "./editor.js";
+import { getText, inkWords } from "./editor.js";
 
 const box = document.getElementById("ink");
 const svg = box.querySelector(".ink-page > svg"), float = box.querySelector(".ink-float");
@@ -37,6 +37,35 @@ function fit() {
   let low = 0;
   for (const p of svg.querySelectorAll("path")) nums(p).forEach((n, i) => { if (i % 2) low = Math.max(low, n); });
   size(Math.max(MIN_ROWS, Math.ceil(low / ROW) + SPARE));
+  countWords();
+}
+// A rough handwritten word count: each stroke's bounding box goes on the ruled row holding its
+// middle; within a row, strokes taken left to right join the current word while the gap to it is
+// under GAP units (i-dots, t-bars and accents overlap their word, so they join it too).
+const GAP = 8;  // matched hand counts of two real pages exactly (84 and 70 words)
+function countWords() {
+  const rows = new Map();
+  for (const p of svg.querySelectorAll("path")) {
+    const n = nums(p);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < n.length; i += 2) {
+      x0 = Math.min(x0, n[i]); x1 = Math.max(x1, n[i]);
+      y0 = Math.min(y0, n[i + 1]); y1 = Math.max(y1, n[i + 1]);
+    }
+    const r = Math.floor((y0 + y1) / 2 / ROW);
+    if (!rows.has(r)) rows.set(r, []);
+    rows.get(r).push([x0, x1]);
+  }
+  let words = 0;
+  for (const boxes of rows.values()) {
+    boxes.sort((a, b) => a[0] - b[0]);
+    let right = -Infinity;
+    for (const [x0, x1] of boxes) {
+      if (x0 > right + GAP) words++;
+      right = Math.max(right, x1);
+    }
+  }
+  inkWords(words);
 }
 // Mid-stroke the box only grows, so the page doesn't jump under the pen.
 const grow = y => { if (y > H - SPARE * ROW) size(Math.ceil(y / ROW) + SPARE); };
