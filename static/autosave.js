@@ -49,6 +49,9 @@ export function autosaver({ url, body, version, delay, status, label, get, set, 
   const KEY = "draft:" + url;
   // note: "Restored unsaved changes", shown until the restored value's first save answers.
   let backupTimer = null, backupFailed = false, note = null;
+  // The exact string this tab last stored (or adopted, in restore()) under KEY: forget() removes the
+  // key only while it still holds that, so an idle tab never deletes another tab's backup.
+  let written = null;
 
   function changed() {
     clearTimeout(backupTimer);
@@ -111,7 +114,9 @@ export function autosaver({ url, body, version, delay, status, label, get, set, 
     if (same(value, saved)) return forget();
     const sent = pending === null ? unsure : [...unsure, pending];
     try {
-      localStorage.setItem(KEY, JSON.stringify({ version, value: pack(saved, value), ...(merge && { base: saved }), sent }));
+      const text = JSON.stringify({ version, value: pack(saved, value), ...(merge && { base: saved }), sent });
+      localStorage.setItem(KEY, text);
+      written = text;
       backupFailed = false;
     } catch (e) {
       backupFailed = true;
@@ -119,18 +124,20 @@ export function autosaver({ url, body, version, delay, status, label, get, set, 
     }
   }
   function forget() {
-    try { localStorage.removeItem(KEY); } catch (e) {}
+    if (written === null) return;
+    try { if (localStorage.getItem(KEY) === written) localStorage.removeItem(KEY); written = null; } catch (e) {}
   }
 
   // On page load: put back a backup the server doesn't have. Still based on the server's version,
   // it's a plain save; otherwise it goes through showConflict (where a lost save of our own is
   // recognized by its fingerprint and adopted), never overwriting another device's edit unasked.
   function restore() {
-    let r = null;
-    try { r = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+    let r = null, raw = null;
+    try { raw = localStorage.getItem(KEY); r = JSON.parse(raw); } catch (e) {}
     if (!r || typeof r !== "object" || !("value" in r)) return;
     let mine;
     try { mine = unpack(r.value, saved); } catch (e) { return; }  // unreadable: left for inspection
+    written = raw;  // from here on this tab owns the backup
     if (same(mine, saved)) return forget();  // the server has it already
     unsure = Array.isArray(r.sent) ? r.sent : [];
     set(format(mine));
