@@ -6,7 +6,8 @@
 //   url: where it loads (GET) and saves; get(): the current value; set(body): show a body loaded
 //   from the server; saved(value): after a successful save; conflict(): when a conflict is shown;
 //   codec: parse(body) turns a server body into a value, same(a, b) compares values, and
-//   request(saved, value) gives the { method, body } that saves value over saved.
+//   request(saved, value) gives the { method, body, type } that saves value over saved (type, if
+//   given, is its Content-Type).
 // The default: the value is the text itself, sent whole.
 const whole = { parse: body => body, same: (a, b) => a === b, request: (_, text) => ({ method: "PUT", body: text }) };
 
@@ -32,13 +33,14 @@ export function autosaver({ url, body, version, delay, status, label, get, set, 
     if (same(value, saved)) return;
     inflight = true;
     status.textContent = "Saving…";
-    const { method, body } = request(saved, value);
+    const { method, body, type } = request(saved, value);
     // keepalive lets the save outlive the page, but browsers cap all pending keepalive bodies at
     // 64 KB in total; the text and drawing savers get half each.
     const keepalive = new Blob([body]).size < 32000;
     // A request that hangs (iPad Safari can stall one across a suspend) would block every later save.
     const signal = AbortSignal.timeout?.(20000);
-    fetch(url, { method, body, keepalive, signal, headers: { "X-Base-Version": version } })
+    const headers = { "X-Base-Version": version, ...(type && { "Content-Type": type }) };
+    fetch(url, { method, body, keepalive, signal, headers })
       .then(async r => {
         if (r.status === 409) return showConflict(await r.json());
         if (!r.ok) throw new Error(r.status);
@@ -48,7 +50,12 @@ export function autosaver({ url, body, version, delay, status, label, get, set, 
         status.textContent = "Saved";
         onSaved?.(value);
       })
-      .catch(() => { unsure.push(value); status.textContent = "Not saved — retrying"; timer = setTimeout(save, 3000); })
+      .catch(e => {
+        unsure.push(value);
+        // A status code means the server refused the save, not that the connection dropped: say so.
+        status.textContent = /^\d+$/.test(e.message) ? `Not saved (error ${e.message}) — retrying` : "Not saved — retrying";
+        timer = setTimeout(save, 3000);
+      })
       .finally(() => { inflight = false; if (again) { again = false; save(); } });
   }
 

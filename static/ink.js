@@ -183,7 +183,8 @@ const strokes = {
     const remove = [];
     let j = 0;
     saved.forEach((d, i) => { if (d === now[j]) j++; else remove.push(i); });
-    return { method: "PATCH", body: JSON.stringify({ remove, add: now.slice(j) }) };
+    // A string body goes out as text/plain unless typed, and the server's get_json() refuses that.
+    return { method: "PATCH", body: JSON.stringify({ remove, add: now.slice(j) }), type: "application/json" };
   },
 };
 // Saved 5 seconds after the last stroke, or when the tab is hidden or closed.
