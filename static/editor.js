@@ -108,8 +108,10 @@ function paint(text, sel) {
   // Plain typing usually leaves the DOM already correct (ignoring reveal()'s class).
   if (ed.innerHTML.replace(/ md-on"/g, '"') === html) return;
   ed.innerHTML = html;
+  // Markers first, then the caret: a caret placed in a still-hidden marker (just after a typed closing _)
+  // would be moved by the browser to the nearest visible spot, before the marker.
+  reveal(sel ?? undefined);
   if (sel) setSel(sel);
-  reveal();
 }
 
 // Show hidden markers of formatting the caret/selection touches, like Obsidian's live preview.
