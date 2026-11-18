@@ -58,6 +58,14 @@ function lineHtml(line) {
   return inline(line);
 }
 
+// A paragraph's timestamp, "**09:05 am.** " at the start of its line (see stampHere()). It's drawn small in
+// the left margin as "9:05 am"; the rest of its text is hidden (still in textContent, like the markers).
+const STAMP = /^\*\*(\d\d):(\d\d) ([ap]m)\.\*\* /, STAMPS = new RegExp(STAMP.source, "gm");
+function stampHtml([, h, m, ap]) {
+  const zero = h[0] === "0" ? "0" : "";
+  return `<span class="stamp"${NS}><span class="x">**${zero}</span>${h.slice(zero.length)}:${m} ${ap}<span class="x">.** </span></span>`;
+}
+
 // Each non-empty line outside code is a paragraph (.p) with a gap below it, parskip-style;
 // list items stay tight (.li) except the last of a run. The "\n"s stay outside the wrappers.
 function markdown(text) {
@@ -67,6 +75,8 @@ function markdown(text) {
     if (/^\s*(```|~~~)/.test(line)) { fence = !fence; return `<span class="md code-line"${NS}>${esc(line)}</span>`; }
     if (fence) return `<span class="code-line"${NS}>${esc(line)}</span>`;
     if (!line) return "";
+    const s = line.match(STAMP);
+    if (s) return `<span class="p">${stampHtml(s)}${inline(line.slice(s[0].length))}</span>`;
     const tight = ITEM.test(line) && i + 1 < lines.length && ITEM.test(lines[i + 1]);
     return `<span class="${tight ? "li" : "p"}">${lineHtml(line)}</span>`;
   }).join("\n");
@@ -86,12 +96,23 @@ function getSel() {
   const s = getSelection();
   if (!s.rangeCount || !ed.contains(s.anchorNode)) return null;
   const r = s.getRangeAt(0);
-  return [offsetOf(r.startContainer, r.startOffset), offsetOf(r.endContainer, r.endOffset)];
+  const a = offsetOf(r.startContainer, r.startOffset), b = offsetOf(r.endContainer, r.endOffset);
+  if (a === b) return [a, b];
+  // A selection reaching into a stamp covers all of it (selecting skips its hidden parts), so copying,
+  // cutting or typing over it never leaves half a stamp.
+  const t = ed.textContent, sa = stampOf(t, a), sb = stampOf(t, b);
+  return [sa && a > sa[0] && a < sa[1] ? sa[0] : a, sb && b > sb[0] && b < sb[1] ? sb[1] : b];
 }
+// At a boundary, the end of a stamp's (hidden) text is skipped for the start of the next node, so a caret
+// just after a stamp sits at the start of the paragraph's text, not in the margin.
 function pointAt(n) {
   const w = document.createTreeWalker(ed, NodeFilter.SHOW_TEXT);
-  for (let node; (node = w.nextNode()); n -= node.length) if (n <= node.length) return [node, n];
-  return [ed, 0];
+  let last = null;
+  for (let node; (node = w.nextNode()); n -= node.length) {
+    if (n < node.length || (n === node.length && !node.parentElement.closest(".stamp"))) return [node, n];
+    last = node;
+  }
+  return last && n === 0 ? [last, last.length] : [ed, 0];
 }
 function setSel([a, b]) {
   const r = document.createRange();
@@ -163,7 +184,8 @@ function unsmartRule(text, sel) {
   return plain(text.slice(0, a)) ? [text.slice(0, a - 2) + "---" + text.slice(a), [a + 1, a + 1]] : null;
 }
 function edited() {
-  const [text, sel] = unsmartRule(getText(), getSel()) ?? [getText(), getSel()];
+  const t = getText(), s = getSel();
+  const [text, sel] = unsmartRule(t, s) ?? emptyStamp(t, s) ?? [t, s];
   paint(text, sel);
   record(text, sel);
   changed(text);
@@ -178,6 +200,87 @@ function apply(text, caret) {
 function insert(s, back = 0) {
   const t = getText(), [a, b] = getSel() ?? [t.length, t.length];
   apply(t.slice(0, a - back) + s + t.slice(b), a - back + s.length);
+}
+
+// --- Paragraph timestamps ---
+// Typing the first character of a prose paragraph on today's entry puts the time before it, unless the
+// last stamp above already says that minute. Lines that may turn into Markdown structure (lists, headings,
+// quotes, tables, code, rules, indents, numbers) aren't stamped. The stamp is plain text in the entry
+// (so it exports, merges and conflicts like the rest), the format the old Alt+T shortcut inserted.
+const pad2 = n => String(n).padStart(2, "0");
+function clock(d = new Date()) {
+  const h = d.getHours();
+  return `**${pad2(h % 12 || 12)}:${pad2(d.getMinutes())} ${h < 12 ? "am" : "pm"}.** `;
+}
+// By the device's clock, like goToday(): a page left open past midnight is no longer today's.
+const isToday = () => { const d = new Date(); return DAY === `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+// The stamp of the line holding offset a, as [line start, stamp end]; null if none (or inside a code block).
+function stampOf(t, a) {
+  const ls = a ? t.lastIndexOf("\n", a - 1) + 1 : 0, m = t.slice(ls, ls + 16).match(STAMP);
+  return m && plain(t.slice(0, ls)) ? [ls, ls + m[0].length] : null;
+}
+// The stamp to put before c, typed or pasted at the caret, or "".
+function stampHere(c) {
+  if (!isToday() || /[-*+#>|`~\d\s—–]/.test(c[0])) return "";
+  const t = getText(), sel = getSel();
+  if (!sel || sel[0] !== sel[1]) return "";
+  const a = sel[0];
+  if ((a && t[a - 1] !== "\n") || (t[a] ?? "\n") !== "\n" || !plain(t.slice(0, a))) return "";
+  const s = clock(), prev = t.slice(0, a).match(STAMPS)?.pop();
+  return prev === s ? "" : s;
+}
+// A paragraph emptied of its text loses its stamp too (it's restamped when you type there again).
+function emptyStamp(text, sel) {
+  const st = sel && sel[0] === sel[1] && stampOf(text, sel[0]);
+  if (!st || sel[0] !== st[1] || (text[st[1]] ?? "\n") !== "\n") return null;
+  return [text.slice(0, st[0]) + text.slice(st[1]), [st[0], st[0]]];
+}
+// Enter at the start of a stamped paragraph opens a line above it; the stamp stays with its text.
+function breakBeforeStamp() {
+  const t = getText(), sel = getSel(), st = sel && sel[0] === sel[1] && stampOf(t, sel[0]);
+  if (!st || sel[0] !== st[1]) return false;
+  apply(t.slice(0, st[0]) + "\n" + t.slice(st[0]), sel[0] + 1);
+  return true;
+}
+// Deleting never leaves part of a stamp. Backspace at the start of a stamped paragraph removes the stamp
+// with the line break before it (joining it to the paragraph above, as usual), and so does Delete at the end
+// of the paragraph above. Any other deletion never cuts a stamp: one ending in a stamp takes all of it. A selection is always deleted here, since the browser might
+// delete what its target range says instead. Returns true if it did the deletion itself.
+function guardStamp(e) {
+  const t = getText(), sel = getSel();
+  if (!sel) return false;
+  const back = /Backward$/.test(e.inputType);
+  if (sel[0] === sel[1]) {
+    const a = sel[0], st = back ? stampOf(t, a) : t[a] === "\n" && stampOf(t, a + 1);
+    if (st && (!back || a === st[1])) {
+      const from = st[0] && st[0] - 1;
+      apply(t.slice(0, from) + t.slice(st[1]), from);
+      return true;
+    }
+  }
+  // A selection is deleted as selected (the browser's target range may skip the stamp's hidden start);
+  // a caret's deletion (a word, to the line start) is the target range.
+  const r = sel[0] === sel[1] && e.getTargetRanges?.()[0];
+  if (sel[0] === sel[1] && !r) return false;
+  const [a, b] = r ? [offsetOf(r.startContainer, r.startOffset), offsetOf(r.endContainer, r.endOffset)] : sel;
+  const sa = stampOf(t, a), sb = stampOf(t, b);
+  // A selection starting in a stamp (select-all skips its hidden start) takes the whole stamp; a caret's
+  // deletion leaves it.
+  const a2 = sa && a > sa[0] && a < sa[1] ? sa[r ? 1 : 0] : a, b2 = sb && b > sb[0] && b < sb[1] ? sb[1] : b;
+  if (r && a2 === a && b2 === b) return false;
+  if (b2 > a2) apply(t.slice(0, a2) + t.slice(b2), a2);
+  return true;
+}
+// The caret never rests inside a stamp: it goes to the start of the paragraph's text, or, moving left out of
+// it, to the end of the line above.
+let leftward = false;
+function keepOutOfStamp(sel) {
+  if (!sel || sel[0] !== sel[1]) return;
+  const st = stampOf(getText(), sel[0]);
+  if (!st || sel[0] > st[1]) return;
+  if (sel[0] === st[1] && !getSelection().anchorNode?.parentElement?.closest(".stamp")) return;
+  const to = leftward && sel[0] < st[1] && st[0] ? st[0] - 1 : st[1];
+  setSel([to, to]);
 }
 
 // --- Pasted rich text (a web page, Google Docs, Word) as Markdown ---
@@ -298,7 +401,7 @@ function plain(before) {
     (line.match(/`/g) || []).length % 2 === 0 && !/(:\/\/|www\.)\S*$/.test(line);
 }
 function sentenceStart(before) {
-  const line = before.slice(before.lastIndexOf("\n") + 1).replace(/^(#{1,6} |\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?|>+ ?)/, "");
+  const line = before.slice(before.lastIndexOf("\n") + 1).replace(STAMP, "").replace(/^(#{1,6} |\s*(?:[-*+]|\d+[.)]) (?:\[[ xX]\] )?|>+ ?)/, "");
   return /^["'“‘(*_]*$/.test(line) ||
     /(?<!\b(?:e\.g|i\.e|vs|cf|etc|[ap]\.m)|\.\.)[.!?]["'”’)\]*_]*\s+["'“‘(*_]*$/.test(line);
 }
@@ -401,6 +504,8 @@ function suggest() {
 }
 document.addEventListener("selectionchange", () => {
   const sel = getSel();
+  keepOutOfStamp(sel);
+  leftward = false;
   reveal(sel);
   if (hint && sel?.[0] !== hintAt) unhint();
   if (fix && sel?.[0] !== fix.caret) fix = null;
@@ -419,17 +524,27 @@ ed.addEventListener("input", e => {
 });
 ed.addEventListener("beforeinput", e => {
   const t = e.inputType, last = fix;
+  let stamp;
   if (t !== "insertText") fix = null;
   if (t === "historyUndo" || t === "historyRedo") { e.preventDefault(); step(t === "historyUndo" ? -1 : 1); }
-  else if (t === "insertParagraph") { e.preventDefault(); newline(); fix = null; }
-  else if (t === "insertLineBreak") { e.preventDefault(); if (!assistType("\n")) insert("\n"); fix = null; }
-  else if (t === "deleteContentBackward") { if (revert(last)) e.preventDefault(); }
+  else if (t === "insertParagraph") { e.preventDefault(); if (!breakBeforeStamp()) newline(); fix = null; }
+  else if (t === "insertLineBreak") { e.preventDefault(); if (!breakBeforeStamp() && !assistType("\n")) insert("\n"); fix = null; }
+  else if (t === "deleteContentBackward" && revert(last)) e.preventDefault();
+  else if (t.startsWith("delete")) { if (guardStamp(e)) e.preventDefault(); }
+  else if (t === "insertText" && !composing && e.data && (stamp = stampHere(e.data))) {
+    e.preventDefault();
+    insert(stamp);
+    if (!assistType(e.data)) insert(e.data);
+    suggest();
+  }
   else if (t === "insertText" && assistType(e.data)) { e.preventDefault(); suggest(); }
   else if (t === "insertFromPaste" || t === "insertFromDrop") {
     // Rich text comes in as Markdown (the editor holds only text); plain text as it is.
     e.preventDefault();
     const dt = e.dataTransfer, html = dt?.getData("text/html");
-    insert((html ? htmlToMarkdown(html) : null) ?? (dt?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n"));
+    const s = (html ? htmlToMarkdown(html) : null) ?? (dt?.getData("text/plain") ?? "").replace(/\r\n?/g, "\n");
+    // Pasted onto an empty line, the first paragraph is stamped like a typed one (unless it has a stamp).
+    insert((s && !STAMP.test(s) ? stampHere(s) : "") + s);
   }
 });
 // Copying or cutting gives the Markdown itself, not the rendered HTML (which pasted back would double its marks).
@@ -458,17 +573,7 @@ ed.addEventListener("keydown", e => {
     insert(s);
   }
   else if (e.key === "Escape") { if (hint) unhint(); else ed.blur(); }
-  // Alt/Option+T: "**09:05 am.** "; with Shift, a "## 09:05 am." heading on its own line.
-  // By code, not key, since Option+T types "†" on a Mac.
-  else if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === "KeyT") {
-    e.preventDefault();
-    unhint();
-    const d = new Date(), h = d.getHours();
-    const now = `${String(h % 12 || 12).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} ${h < 12 ? "am" : "pm"}.`;
-    if (!e.shiftKey) return insert(`**${now}** `);
-    const t = getText(), a = (getSel() ?? [t.length])[0];
-    insert(`${a && t[a - 1] !== "\n" ? "\n" : ""}## ${now}\n`);
-  }
+  else leftward = e.key === "ArrowLeft";
 });
 
 // Links: ⌘/Ctrl-click to open (a plain tap on touch screens); a plain click just places the caret.
@@ -512,7 +617,7 @@ function showCount() {
   wordsEl.title = inked ? "typed + handwritten (estimated)" : "";
 }
 function count(text) {
-  typed = text.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
+  typed = text.replace(STAMPS, "").split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
   showCount();
 }
 export function inkWords(m) {

@@ -51,6 +51,25 @@ document.getElementById("next").onclick = () => {
 document.getElementById("month").onclick = () => { yearView = !yearView; renderCal(); };
 renderCal();
 
+// Overlays: the header's calendar / search icons open them; Esc or a click outside closes them.
+const calDlg = document.getElementById("cal-dlg"), searchDlg = document.getElementById("search-dlg");
+function openCal() {
+  if (calDlg.open) return;
+  [y, m] = DAY.split("-").map(Number);  // always opens on the page's month
+  yearView = false;
+  renderCal();
+  calDlg.showModal();
+}
+function openSearch() {
+  if (searchDlg.open) return;
+  searchDlg.showModal();
+  document.getElementById("q").select();
+}
+for (const d of [calDlg, searchDlg])
+  d.addEventListener("click", e => { if (e.target === d) d.close(); });  // the backdrop, outside the box
+document.getElementById("cal-btn").onclick = openCal;
+document.getElementById("search-btn").onclick = openSearch;
+
 // Today by the system clock at the moment of the keypress, not TODAY, which is stale on a page
 // left open past midnight.
 function goToday() {
@@ -58,14 +77,15 @@ function goToday() {
   location.href = `/${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-// Shortcuts when not typing: ←/→ previous/next day, t today, / search.
+// Shortcuts when not typing: ←/→ previous/next day, t today, / search, c calendar.
 document.addEventListener("keydown", e => {
-  if (e.target.closest("input, [contenteditable]") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.closest("input, [contenteditable], dialog") || e.metaKey || e.ctrlKey || e.altKey) return;
   const go = id => { const a = document.getElementById(id); if (a) location.href = a.href; };
   if (e.key === "ArrowLeft") go("prev-day");
   else if (e.key === "ArrowRight") go("next-day");
   else if (e.key === "t") goToday();
-  else if (e.key === "/") { e.preventDefault(); document.getElementById("q").focus(); }
+  else if (e.key === "/") { e.preventDefault(); openSearch(); }
+  else if (e.key === "c") { e.preventDefault(); openCal(); }
 });
 
 // Alt/Option+D: today, even while typing. By code, not key, since Option+D types "∂" on a Mac.
