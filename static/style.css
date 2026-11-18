@@ -15,8 +15,9 @@ body {
   font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   padding: 40px 24px;
 }
-/* Centered; the wide left margin holds paragraph timestamps and the ink pill. */
-main { display: flex; flex-direction: column; min-width: 0; max-width: 704px; margin: 0 auto; }
+/* Centered; the side margins hold paragraph timestamps and the ink pill. The column is narrowed so each
+   gutter stays >= 84px (24px body padding + 60px) above 720px: room for the ~58px stamp + 16px offset and the 44px pill. */
+main { display: flex; flex-direction: column; min-width: 0; max-width: min(704px, 100% - 120px); margin: 0 auto; }
 a { color: inherit; }
 button { font: inherit; color: inherit; }
 
@@ -170,6 +171,7 @@ dialog input {
 
 @media (max-width: 720px) {
   body { padding: 20px 16px; }
+  main { max-width: none; }
   /* No margin to spare: the stamp sits at the start of its paragraph. */
   .ed .stamp { position: static; margin-right: 6px; line-height: 1; }
   .ink-float { left: 4px; }
