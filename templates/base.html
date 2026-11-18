@@ -9,12 +9,7 @@
 <script>try { const t = localStorage.theme; if (t) document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body>
-<aside>
-  <div class="top">
-    <form class="search" action="/search">
-      <input id="q" name="q" type="search" placeholder="Search" value="{{ q or '' }}" autocomplete="off">
-    </form>
-  </div>
+<dialog id="cal-dlg" aria-label="Calendar" tabindex="-1" autofocus>
   <div class="cal-head">
     <button id="prev" aria-label="Previous">‹</button>
     <button id="month" class="title" title="Pick a month"></button>
@@ -25,7 +20,12 @@
     {% if not day or day.isoformat() != today %}<a href="/">Go to today</a>{% endif %}
     <a href="/export.zip">Export</a>
   </nav>
-</aside>
+</dialog>
+<dialog id="search-dlg" aria-label="Search">
+  <form class="search" action="/search">
+    <input id="q" name="q" type="search" placeholder="Search" value="{{ q or '' }}" autocomplete="off">
+  </form>
+</dialog>
 <main>
 {% block main %}{% endblock %}
 </main>
