@@ -17,7 +17,8 @@ body {
 }
 /* Centered; the side margins hold paragraph timestamps and the ink pill. The column is narrowed so each
    gutter stays >= 84px (24px body padding + 60px) above 720px: room for the ~58px stamp + 16px offset and the 44px pill. */
-main { display: flex; flex-direction: column; min-width: 0; max-width: min(704px, 100% - 120px); margin: 0 auto; }
+/* The bottom padding leaves room below the last line (text or ink) to scroll it up, away from the screen's edge. */
+main { display: flex; flex-direction: column; min-width: 0; max-width: min(704px, 100% - 120px); margin: 0 auto; padding-bottom: 40vh; }
 a { color: inherit; }
 button { font: inherit; color: inherit; }
 
@@ -128,9 +129,8 @@ dialog input {
 .ed a { text-decoration-color: var(--muted); text-underline-offset: 2px; }
 .mod .ed a { cursor: pointer; }
 
-/* Ink: scribble box under the entry. Strokes take the text color, so they follow the theme.
-   The bottom padding lets the last lines scroll up, away from the screen's edge. */
-.ink { margin-top: 56px; padding-bottom: 40vh; user-select: none; -webkit-user-select: none; }
+/* Ink: scribble box under the entry. Strokes take the text color, so they follow the theme. */
+.ink { margin-top: 56px; user-select: none; -webkit-user-select: none; }
 /* Holds only the save status; its height is reserved so the box doesn't shift when that appears. */
 .ink-bar { display: flex; gap: 12px; font-size: 12px; line-height: 18px; min-height: 18px; color: var(--muted); margin-bottom: 4px; }
 .ink-bar button { background: none; border: 0; padding: 2px 6px; border-radius: 4px; color: var(--muted); cursor: pointer; }
