@@ -199,19 +199,35 @@ let lifted = false;
 function keepCaretUp() {
   const s = getSelection();
   if (!s.rangeCount || !ed.contains(s.focusNode)) return;
-  const r = document.createRange();
-  r.setStart(s.focusNode, s.focusOffset);
-  let rect = r.getClientRects()[0];
-  if (!rect?.height) {
-    // An empty line has no text to measure: use the element at (or holding) the caret.
-    const n = s.focusNode.nodeType === Node.TEXT_NODE ? s.focusNode.parentElement
-      : s.focusNode.childNodes[s.focusOffset] ?? s.focusNode;
-    rect = (n.nodeType === Node.ELEMENT_NODE ? n : n.parentElement).getBoundingClientRect();
-  }
+  const rect = caretLine(s.focusNode, s.focusOffset);
+  if (!rect) return;
   const vv = visualViewport, h = vv?.height ?? innerHeight, limit = (vv?.offsetTop ?? 0) + h * 2 / 3;
   if (rect.bottom <= limit) return;
   scrollBy(0, rect.bottom - limit);
   lifted = true;
+}
+// The rect of the caret's line: that of the first visible character at or after the caret (or of the
+// trailing <br>), or null if there's none. A collapsed range can't be trusted: Chromium gives it no rect in
+// the "\n" text between paragraphs (an empty line), and WebKit puts it after a "\n" on the line before.
+function caretLine(node, off) {
+  let n = node;
+  if (n.nodeType !== Node.TEXT_NODE) {
+    n = n.childNodes[off];
+    for (let p = node; !n && p !== ed; p = p.parentNode) n = p.nextSibling;
+    if (!n) return null;
+    off = 0;
+  }
+  const w = document.createTreeWalker(ed, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  const r = document.createRange();
+  for (w.currentNode = n; n; n = w.nextNode(), off = 0) {
+    if (n.nodeName === "BR") return n.getBoundingClientRect();
+    if (n.nodeType !== Node.TEXT_NODE || off >= n.length) continue;
+    r.setStart(n, off);
+    r.setEnd(n, off + 1);
+    const rect = r.getClientRects()[0];
+    if (rect?.height) return rect;
+  }
+  return null;
 }
 function apply(text, caret) {
   const sel = Array.isArray(caret) ? caret : [caret, caret];
