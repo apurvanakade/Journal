@@ -166,6 +166,7 @@ function step(d) {
   lastEdit = 0;
   paint(hist[hi].text, hist[hi].sel);
   changed(hist[hi].text);
+  keepCaretUp();
 }
 // Replace the whole text (a load from the server, or a merge) as its own undo step.
 function replace(text) {
@@ -189,12 +190,35 @@ function edited() {
   paint(text, sel);
   record(text, sel);
   changed(text);
+  keepCaretUp();
+}
+// After an edit, scroll so the caret stays at least a third of the (visual, so above an on-screen keyboard)
+// viewport above its bottom edge; the browser alone would leave it on the last visible line.
+// main's 40vh bottom padding is what makes room to scroll that far. `lifted` tells hintSoon() it scrolled.
+let lifted = false;
+function keepCaretUp() {
+  const s = getSelection();
+  if (!s.rangeCount || !ed.contains(s.focusNode)) return;
+  const r = document.createRange();
+  r.setStart(s.focusNode, s.focusOffset);
+  let rect = r.getClientRects()[0];
+  if (!rect?.height) {
+    // An empty line has no text to measure: use the element at (or holding) the caret.
+    const n = s.focusNode.nodeType === Node.TEXT_NODE ? s.focusNode.parentElement
+      : s.focusNode.childNodes[s.focusOffset] ?? s.focusNode;
+    rect = (n.nodeType === Node.ELEMENT_NODE ? n : n.parentElement).getBoundingClientRect();
+  }
+  const vv = visualViewport, h = vv?.height ?? innerHeight, limit = (vv?.offsetTop ?? 0) + h * 2 / 3;
+  if (rect.bottom <= limit) return;
+  scrollBy(0, rect.bottom - limit);
+  lifted = true;
 }
 function apply(text, caret) {
   const sel = Array.isArray(caret) ? caret : [caret, caret];
   paint(text, sel);
   record(text, sel);
   changed(text);
+  keepCaretUp();
 }
 // Insert s at the selection, also replacing the `back` characters before it.
 function insert(s, back = 0) {
@@ -502,6 +526,12 @@ function suggest() {
   ghost.textContent = hint;
   ghost.hidden = false;
 }
+// keepCaretUp()'s scroll event, which comes later, would hide a hint shown now: show it after that.
+function hintSoon() {
+  if (lifted) requestAnimationFrame(suggest);
+  else suggest();
+  lifted = false;
+}
 document.addEventListener("selectionchange", () => {
   const sel = getSel();
   keepOutOfStamp(sel);
@@ -520,7 +550,7 @@ ed.addEventListener("compositionend", () => { composing = false; edited(); });
 ed.addEventListener("input", e => {
   if (composing) return;
   edited();
-  if (e.inputType === "insertText") suggest();
+  if (e.inputType === "insertText") hintSoon();
 });
 ed.addEventListener("beforeinput", e => {
   const t = e.inputType, last = fix;
@@ -535,9 +565,9 @@ ed.addEventListener("beforeinput", e => {
     e.preventDefault();
     insert(stamp);
     if (!assistType(e.data)) insert(e.data);
-    suggest();
+    hintSoon();
   }
-  else if (t === "insertText" && assistType(e.data)) { e.preventDefault(); suggest(); }
+  else if (t === "insertText" && assistType(e.data)) { e.preventDefault(); hintSoon(); }
   else if (t === "insertFromPaste" || t === "insertFromDrop") {
     // Rich text comes in as Markdown (the editor holds only text); plain text as it is.
     e.preventDefault();
