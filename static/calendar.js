@@ -1,10 +1,17 @@
 // Calendar (month view, or year view when the title is clicked) and page-level shortcuts.
-// Expects DAY, SEL, TODAY, DAYS from the page.
+// Expects DAY, SEL, DAYS from the page.
 const pad = n => String(n).padStart(2, "0");
+// Today by the device's clock, read each time: the server's date at render time is stale on a page
+// left open past midnight.
+export function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 let [y, m] = DAY.split("-").map(Number);
 let yearView = false;
 
 export function renderCal() {
+  const now = today();
   const grid = document.getElementById("grid");
   const title = document.getElementById("month");
   grid.innerHTML = "";
@@ -17,7 +24,7 @@ export function renderCal() {
       a.href = "#";
       a.textContent = new Date(y, i - 1).toLocaleString("en-US", { month: "short" });
       if ([...DAYS].some(d => d.startsWith(key))) a.classList.add("has");
-      if (TODAY.startsWith(key)) a.classList.add("today");
+      if (now.startsWith(key)) a.classList.add("today");
       if (SEL.startsWith(key)) a.classList.add("sel");
       a.onclick = e => { e.preventDefault(); m = i; yearView = false; renderCal(); };
       grid.append(a);
@@ -35,7 +42,7 @@ export function renderCal() {
     a.href = "/" + iso;
     a.textContent = d;
     if (DAYS.has(iso)) a.classList.add("has");
-    if (iso === TODAY) a.classList.add("today");
+    if (iso === now) a.classList.add("today");
     if (iso === SEL) a.classList.add("sel");
     grid.append(a);
   }
@@ -58,6 +65,7 @@ function openCal() {
   [y, m] = DAY.split("-").map(Number);  // always opens on the page's month
   yearView = false;
   renderCal();
+  todayLink.hidden = SEL === today();
   calDlg.showModal();
 }
 function openSearch() {
@@ -70,12 +78,10 @@ for (const d of [calDlg, searchDlg])
 document.getElementById("cal-btn").onclick = openCal;
 document.getElementById("search-btn").onclick = openSearch;
 
-// Today by the system clock at the moment of the keypress, not TODAY, which is stale on a page
-// left open past midnight.
-function goToday() {
-  const d = new Date();
-  location.href = `/${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
+function goToday() { location.href = "/" + today(); }
+// The link's href "/" is the server's today; the click goes by the device's instead.
+const todayLink = document.getElementById("go-today");
+todayLink.onclick = e => { e.preventDefault(); goToday(); };
 
 // Shortcuts when not typing: ←/→ previous/next day, t today, / search, c calendar.
 document.addEventListener("keydown", e => {

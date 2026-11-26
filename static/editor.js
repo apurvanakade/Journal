@@ -1,6 +1,6 @@
 // Editor: the entry is plain Markdown text, re-rendered with styling as you type.
 // Expects DAY, DAYS and BODY, VERSION from the page.
-import { renderCal } from "./calendar.js";
+import { renderCal, today } from "./calendar.js";
 import { autosaver } from "./autosave.js";
 import { merge as diff3 } from "./vendor/diff3.js";
 
@@ -252,8 +252,8 @@ function clock(d = new Date()) {
   const h = d.getHours();
   return `**${pad2(h % 12 || 12)}:${pad2(d.getMinutes())} ${h < 12 ? "am" : "pm"}.** `;
 }
-// By the device's clock, like goToday(): a page left open past midnight is no longer today's.
-const isToday = () => { const d = new Date(); return DAY === `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+// By the device's clock: a page left open past midnight is no longer today's.
+const isToday = () => DAY === today();
 // The stamp of the line holding offset a, as [line start, stamp end]; null if none (or inside a code block).
 function stampOf(t, a) {
   const ls = a ? t.lastIndexOf("\n", a - 1) + 1 : 0, m = t.slice(ls, ls + 16).match(STAMP);
