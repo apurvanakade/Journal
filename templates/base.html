@@ -17,7 +17,7 @@
   </div>
   <div class="grid" id="grid"></div>
   <nav class="side-links">
-    {% if not day or day.isoformat() != today %}<a href="/">Go to today</a>{% endif %}
+    <a id="go-today" href="/">Go to today</a>
     <a href="/export.zip">Export</a>
   </nav>
 </dialog>
@@ -32,7 +32,6 @@
 <script>
 const DAY = {{ (day.isoformat() if day else today) | tojson }};
 const SEL = {{ (day.isoformat() if day else "") | tojson }};
-const TODAY = {{ today | tojson }};
 const DAYS = new Set({{ days | tojson }});
 </script>
 <script>
